@@ -12,98 +12,67 @@
 #+OPTIONS: ^:{}
 #+OPTIONS: H:5
 #+TOC: headlines 2
-#+BEGIN_SRC python :session fastai :results none :exports none
+#+BEGIN_SRC ipython :session fastai :results none :exports none
 %load_ext autoreload
 %autoreload 2
 #+END_SRC
 
 This is a re-working of the [[https://github.com/fastai/course-v3/blob/master/nbs/dl1/lesson2-download.ipynb][Notebook *by: Francisco Ingham and Jeremy Howard.]] Who cite [[https://www.pyimagesearch.com/2017/12/04/how-to-create-a-deep-learning-dataset-using-google-images][Adrian Rosebrock]] as the original inspiration.
-* The Departure
+
+* Beginning
 ** Imports
+*** Python
+#+begin_src ipython :session fastai :results none
+from pathlib import Path
+#+end_src
 *** PyPi
+#+begin_src ipython :session fastai :results none
+from google_images_download.google_images_download import googleimagesdownload\
+    as GoogleImages
+#+end_src
+*** Graeae
+#+begin_src ipython :session fastai :results none
+from graeae import EnvironmentLoader
+#+end_src
+** Set Up
+*** The Environment
+#+begin_src ipython :session fastai :results none
+ENVIRONMENT = EnvironmentLoader()
+OUTPUT_FOLDER = Path(ENVIRONMENT["WEEDS"]).expanduser()
+if not OUTPUT_FOLDER.is_dir():
+    OUTPUT_FOLDER.mkdir(parents=True)
+#+end_src
+*** The Downloader
+#+begin_src ipython :session fastai :results none
+google_images = GoogleImages()
+#+end_src
+* Middle
 ** Downloading the Images
+*** Dandelions
+#+begin_src ipython :session fastai :results output :exports both
+arguments = dict(
+    keywords="dandelion",
+    limit=1000,
+    type="photo",
+    delay=1,
+    output_directory=str(OUTPUT_FOLDER),
+    image_director="dandelion",
+    chromedrive="/usr/local/bin/chromedriver",
+    save_source="MANIFEST",
+)
 
-[[file:google_images_start.png]]
+paths = google_images.download(arguments)
+#+end_src
 
-What we're going to do is go to google images, make a search, and then use some javascript to dowload the images.
-
-# Go to [Google Images](http://images.google.com) and search for the images you are interested in. The more specific you are in your Google Search, the better the results and the less manual pruning you will have to do.
-# 
-# Scroll down until you've seen all the images you want to download, or until you see a button that says 'Show more results'. All the images you scrolled past are now available to download. To get more, click on the button, and continue scrolling. The maximum number of images Google Images shows is 700.
-# 
-# It is a good idea to put things you want to exclude into the search query, for instance if you are searching for the Eurasian wolf, "canis lupus lupus", it might be a good idea to exclude other variants:
-# 
-#     "canis lupus lupus" -dog -arctos -familiaris -baileyi -occidentalis
-# 
-# You can also limit your results to show only photos by clicking on Tools and selecting Photos from the Type dropdown.
-
-# ### Download into file
-
-# Now you must run some Javascript code in your browser which will save the URLs of all the images you want for you dataset.
-# 
-# Press <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> in Windows/Linux and <kbd>Cmd</kbd><kbd>Opt</kbd><kbd>J</kbd> in Mac, and a small window the javascript 'Console' will appear. That is where you will paste the JavaScript commands.
-# 
-# You will need to get the urls of each of the images. You can do this by running the following commands:
-# 
-# ```javascript
-# urls = Array.from(document.querySelectorAll('.rg_di .rg_meta')).map(el=>JSON.parse(el.textContent).ou);
-# window.open('data:text/csv;charset=utf-8,' + escape(urls.join('\n')));
-# ```
-
-# ### Create directory and upload urls file into your server
-
-# Choose an appropriate name for your labeled images. You can run these steps multiple times to create different labels.
-
-# In[ ]:
-
-
-folder = 'black'
-file = 'urls_black.csv'
-
-
-# In[ ]:
-
-
-folder = 'teddys'
-file = 'urls_teddys.csv'
-
-
-# In[ ]:
-
-
-folder = 'grizzly'
-file = 'urls_grizzly.csv'
-
-
-# You will need to run this cell once per each category.
-
-# In[ ]:
-
-
-path = Path('data/bears')
-dest = path/folder
-dest.mkdir(parents=True, exist_ok=True)
-
-
-# In[ ]:
-
-
-path.ls()
-
-
-# Finally, upload your urls file. You just need to press 'Upload' in your working directory and select your file, then click 'Upload' for each of the displayed files.
-# 
-# ![uploaded file](images/download_images/upload.png)
-
-# ## Download images
-
-# Now you will need to download your images from their respective urls.
-# 
-# fast.ai has a function that allows you to do just that. You just have to specify the urls filename as well as the destination folder and this function will download and save all images that can be opened. If they have some problem in being opened, they will not be saved.
-# 
-# Let's download our images! Notice you can choose a maximum number of images to be downloaded. In this case we will not download all the urls.
-# 
-# You will need to run this line once for every category.
+#+begin_src ipython :session fastai :results output :exports both
+for filename in (OUTPUT_FOLDER/"dandelion").iterdir():
+    try:
+        with Image.open(filename) as image:
+            print(f"Okay: {filename}")
+    except Exception:
+        print(f"Removing: {filename}")
+#+end_src
+* End
 
 # In[ ]:
 
