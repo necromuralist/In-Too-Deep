@@ -12,7 +12,7 @@ except ImportError:
     use_setuptools()
 
 setup(name='neurotic',
-      version='2018.10.27',
+      version='2020.03.15',
       description=("Code for studying neural networks."),
       author="russell",
       platforms=['linux'],
