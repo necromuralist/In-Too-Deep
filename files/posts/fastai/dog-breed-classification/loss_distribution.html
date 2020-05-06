@@ -1,835 +1,553 @@
 
-<script src="https://cdn.pydata.org/bokeh/release/bokeh-1.0.4.min.js" type="text/javascript"></script>
-<script src="https://cdn.pydata.org/bokeh/release/bokeh-widgets-1.0.4.min.js" type="text/javascript"></script>
-<script src="https://cdn.pydata.org/bokeh/release/bokeh-tables-1.0.4.min.js" type="text/javascript"></script>
-<script src="https://cdn.pydata.org/bokeh/release/bokeh-gl-1.0.4.min.js" type="text/javascript"></script>
-<script src="https://code.jquery.com/jquery-2.1.4.min.js" type="text/javascript"></script>
-<script src="https://code.jquery.com/ui/1.10.4/jquery-ui.min.js" type="text/javascript"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.20/require.min.js" type="text/javascript"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js" type="text/javascript"></script>
-<script type="text/javascript">function HoloViewsWidget() {
-}
 
-HoloViewsWidget.prototype.init_slider = function(init_val){
-  if(this.load_json) {
-    this.from_json()
-  } else {
-    this.update_cache();
-  }
-}
 
-HoloViewsWidget.prototype.populate_cache = function(idx){
-  this.cache[idx].innerHTML = this.frames[idx];
-  if (this.embed) {
-    delete this.frames[idx];
-  }
-}
 
-HoloViewsWidget.prototype.process_error = function(msg){
-}
-
-HoloViewsWidget.prototype.from_json = function() {
-  var data_url = this.json_path + this.id + '.json';
-  $.getJSON(data_url, $.proxy(function(json_data) {
-    this.frames = json_data;
-    this.update_cache();
-    this.update(0);
-  }, this));
-}
-
-HoloViewsWidget.prototype.dynamic_update = function(current){
-  if (current === undefined) {
-    return
-  }
-  this.current = current;
-  if (this.comm) {
-    var msg = {comm_id: this.id+'_client', content: current}
-    this.comm.send(msg);
-  }
-}
-
-HoloViewsWidget.prototype.update_cache = function(force){
-  var frame_len = Object.keys(this.frames).length;
-  for (var i=0; i<frame_len; i++) {
-    if(!this.load_json || this.dynamic)  {
-      var frame = Object.keys(this.frames)[i];
-    } else {
-      var frame = i;
-    }
-    if(!(frame in this.cache) || force) {
-      if ((frame in this.cache) && force) { this.cache[frame].remove() }
-      var div = document.createElement("div");
-      var parent = document.getElementById("_anim_img"+this.id);
-      div.style.display = "none";
-      parent.appendChild(div)
-      this.cache[frame] = div;
-      var cache_id = "_anim_img"+this.id+"_"+frame;
-      this.populate_cache(frame);
-    }
-  }
-}
-
-HoloViewsWidget.prototype.update = function(current){
-  if(current in this.cache) {
-    for (var index in this.cache) {
-      this.cache[index].style.display = "none";
-    }
-    this.cache[current].style.display = "";
-    this.wait = false;
-  }
-}
-
-HoloViewsWidget.prototype.init_comms = function() {
-  var that = this
-  HoloViews.comm_manager.register_target(this.plot_id, this.id, function (msg) { that.msg_handler(msg) })
-  if (!this.cached || this.dynamic) {
-    function ack_callback(msg) {
-      var msg = msg.metadata;
-      var comm_id = msg.comm_id;
-      var comm_status = HoloViews.comm_status[comm_id];
-      if (that.queue.length > 0) {
-        that.time = Date.now();
-        that.dynamic_update(that.queue[that.queue.length-1]);
-        that.queue = [];
-      } else {
-        that.wait = false;
-      }
-      if ((msg.msg_type == "Ready") && msg.content) {
-        console.log("Python callback returned following output:", msg.content);
-      } else if (msg.msg_type == "Error") {
-        console.log("Python failed with the following traceback:", msg.traceback)
-      }
-    }
-    var comm = HoloViews.comm_manager.get_client_comm(this.plot_id, this.id+'_client', ack_callback);
-    return comm
-  }
-}
-
-HoloViewsWidget.prototype.msg_handler = function(msg) {
-  var metadata = msg.metadata;
-  if ((metadata.msg_type == "Ready")) {
-    if (metadata.content) {
-      console.log("Python callback returned following output:", metadata.content);
-    }
-	return;
-  } else if (metadata.msg_type == "Error") {
-    console.log("Python failed with the following traceback:", metadata.traceback)
-    return
-  }
-  this.process_msg(msg)
-}
-
-HoloViewsWidget.prototype.process_msg = function(msg) {
-}
-
-function SelectionWidget(frames, id, slider_ids, keyMap, dim_vals, notFound, load_json, mode, cached, json_path, dynamic, plot_id){
-  this.frames = frames;
-  this.id = id;
-  this.plot_id = plot_id;
-  this.slider_ids = slider_ids;
-  this.keyMap = keyMap
-  this.current_frame = 0;
-  this.current_vals = dim_vals;
-  this.load_json = load_json;
-  this.mode = mode;
-  this.notFound = notFound;
-  this.cached = cached;
-  this.dynamic = dynamic;
-  this.cache = {};
-  this.json_path = json_path;
-  this.init_slider(this.current_vals[0]);
-  this.queue = [];
-  this.wait = false;
-  if (!this.cached || this.dynamic) {
-    this.comm = this.init_comms();
-  }
-}
-
-SelectionWidget.prototype = new HoloViewsWidget;
-
-
-SelectionWidget.prototype.get_key = function(current_vals) {
-  var key = "(";
-  for (var i=0; i<this.slider_ids.length; i++)
-  {
-    var val = this.current_vals[i];
-    if (!(typeof val === 'string')) {
-      if (val % 1 === 0) { val = val.toFixed(1); }
-      else { val = val.toFixed(10); val = val.slice(0, val.length-1);}
-    }
-    key += "'" + val + "'";
-    if(i != this.slider_ids.length-1) { key += ', ';}
-    else if(this.slider_ids.length == 1) { key += ',';}
-  }
-  key += ")";
-  return this.keyMap[key];
-}
-
-SelectionWidget.prototype.set_frame = function(dim_val, dim_idx){
-  this.current_vals[dim_idx] = dim_val;
-  var key = this.current_vals;
-  if (!this.dynamic) {
-    key = this.get_key(key)
-  }
-  if (this.dynamic || !this.cached) {
-    if ((this.time !== undefined) && ((this.wait) && ((this.time + 10000) > Date.now()))) {
-      this.queue.push(key);
-      return
-    }
-    this.queue = [];
-    this.time = Date.now();
-    this.current_frame = key;
-    this.wait = true;
-    this.dynamic_update(key)
-  } else if (key !== undefined) {
-    this.update(key)
-  }
-}
-
-
-/* Define the ScrubberWidget class */
-function ScrubberWidget(frames, num_frames, id, interval, load_json, mode, cached, json_path, dynamic, plot_id){
-  this.slider_id = "_anim_slider" + id;
-  this.loop_select_id = "_anim_loop_select" + id;
-  this.id = id;
-  this.plot_id = plot_id;
-  this.interval = interval;
-  this.current_frame = 0;
-  this.direction = 0;
-  this.dynamic = dynamic;
-  this.timer = null;
-  this.load_json = load_json;
-  this.mode = mode;
-  this.cached = cached;
-  this.frames = frames;
-  this.cache = {};
-  this.length = num_frames;
-  this.json_path = json_path;
-  document.getElementById(this.slider_id).max = this.length - 1;
-  this.init_slider(0);
-  this.wait = false;
-  this.queue = [];
-  if (!this.cached || this.dynamic) {
-    this.comm = this.init_comms()
-  }
-}
-
-ScrubberWidget.prototype = new HoloViewsWidget;
-
-ScrubberWidget.prototype.set_frame = function(frame){
-  this.current_frame = frame;
-  var widget = document.getElementById(this.slider_id);
-  if (widget === null) {
-    this.pause_animation();
-    return
-  }
-  widget.value = this.current_frame;
-  if (this.dynamic || !this.cached) {
-    if ((this.time !== undefined) && ((this.wait) && ((this.time + 10000) > Date.now()))) {
-      this.queue.push(frame);
-      return
-    }
-    this.queue = [];
-    this.time = Date.now();
-    this.wait = true;
-    this.dynamic_update(frame)
-  } else {
-    this.update(frame)
-  }
-}
-
-ScrubberWidget.prototype.get_loop_state = function(){
-  var button_group = document[this.loop_select_id].state;
-  for (var i = 0; i < button_group.length; i++) {
-    var button = button_group[i];
-    if (button.checked) {
-      return button.value;
-    }
-  }
-  return undefined;
-}
-
-
-ScrubberWidget.prototype.next_frame = function() {
-  this.set_frame(Math.min(this.length - 1, this.current_frame + 1));
-}
-
-ScrubberWidget.prototype.previous_frame = function() {
-  this.set_frame(Math.max(0, this.current_frame - 1));
-}
-
-ScrubberWidget.prototype.first_frame = function() {
-  this.set_frame(0);
-}
-
-ScrubberWidget.prototype.last_frame = function() {
-  this.set_frame(this.length - 1);
-}
-
-ScrubberWidget.prototype.slower = function() {
-  this.interval /= 0.7;
-  if(this.direction > 0){this.play_animation();}
-  else if(this.direction < 0){this.reverse_animation();}
-}
-
-ScrubberWidget.prototype.faster = function() {
-  this.interval *= 0.7;
-  if(this.direction > 0){this.play_animation();}
-  else if(this.direction < 0){this.reverse_animation();}
-}
-
-ScrubberWidget.prototype.anim_step_forward = function() {
-  if(this.current_frame < this.length - 1){
-    this.next_frame();
-  }else{
-    var loop_state = this.get_loop_state();
-    if(loop_state == "loop"){
-      this.first_frame();
-    }else if(loop_state == "reflect"){
-      this.last_frame();
-      this.reverse_animation();
-    }else{
-      this.pause_animation();
-      this.last_frame();
-    }
-  }
-}
-
-ScrubberWidget.prototype.anim_step_reverse = function() {
-  if(this.current_frame > 0){
-    this.previous_frame();
-  } else {
-    var loop_state = this.get_loop_state();
-    if(loop_state == "loop"){
-      this.last_frame();
-    }else if(loop_state == "reflect"){
-      this.first_frame();
-      this.play_animation();
-    }else{
-      this.pause_animation();
-      this.first_frame();
-    }
-  }
-}
-
-ScrubberWidget.prototype.pause_animation = function() {
-  this.direction = 0;
-  if (this.timer){
-    clearInterval(this.timer);
-    this.timer = null;
-  }
-}
-
-ScrubberWidget.prototype.play_animation = function() {
-  this.pause_animation();
-  this.direction = 1;
-  var t = this;
-  if (!this.timer) this.timer = setInterval(function(){t.anim_step_forward();}, this.interval);
-}
-
-ScrubberWidget.prototype.reverse_animation = function() {
-  this.pause_animation();
-  this.direction = -1;
-  var t = this;
-  if (!this.timer) this.timer = setInterval(function(){t.anim_step_reverse();}, this.interval);
-}
-
-function extend(destination, source) {
-  for (var k in source) {
-    if (source.hasOwnProperty(k)) {
-      destination[k] = source[k];
-    }
-  }
-  return destination;
-}
-
-function update_widget(widget, values) {
-  if (widget.hasClass("ui-slider")) {
-    widget.slider('option', {
-      min: 0,
-      max: values.length-1,
-      dim_vals: values,
-      value: 0,
-      dim_labels: values
-    })
-    widget.slider('option', 'slide').call(widget, event, {value: 0})
-  } else {
-    widget.empty();
-    for (var i=0; i<values.length; i++){
-      widget.append($("<option>", {
-        value: i,
-        text: values[i]
-      }))
-    };
-    widget.data('values', values);
-    widget.data('value', 0);
-    widget.trigger("change");
-  };
-}
-
-function init_slider(id, plot_id, dim, values, next_vals, labels, dynamic, step, value, next_dim,
-                     dim_idx, delay, jQueryUI_CDN, UNDERSCORE_CDN) {
-  // Slider JS Block START
-  function loadcssfile(filename){
-    var fileref=document.createElement("link")
-    fileref.setAttribute("rel", "stylesheet")
-    fileref.setAttribute("type", "text/css")
-    fileref.setAttribute("href", filename)
-    document.getElementsByTagName("head")[0].appendChild(fileref)
-  }
-  loadcssfile("https://code.jquery.com/ui/1.10.4/themes/smoothness/jquery-ui.css");
-  /* Check if jQuery and jQueryUI have been loaded
-     otherwise load with require.js */
-  var jQuery = window.jQuery,
-    // check for old versions of jQuery
-    oldjQuery = jQuery && !!jQuery.fn.jquery.match(/^1\.[0-4](\.|$)/),
-    jquery_path = '',
-    paths = {},
-    noConflict;
-  var jQueryUI = jQuery.ui;
-  // check for jQuery
-  if (!jQuery || oldjQuery) {
-    // load if it's not available or doesn't meet min standards
-    paths.jQuery = jQuery;
-    noConflict = !!oldjQuery;
-  } else {
-    // register the current jQuery
-    define('jquery', [], function() { return jQuery; });
-  }
-  if (!jQueryUI) {
-    paths.jQueryUI = jQueryUI_CDN.slice(null, -3);
-  } else {
-    define('jQueryUI', [], function() { return jQuery.ui; });
-  }
-  paths.underscore = UNDERSCORE_CDN.slice(null, -3);
-  var jquery_require = {
-    paths: paths,
-    shim: {
-      "jQueryUI": {
-        exports:"$",
-        deps: ['jquery']
-      },
-      "underscore": {
-        exports: '_'
-      }
-    }
-  }
-  require.config(jquery_require);
-  require(["jQueryUI", "underscore"], function(jUI, _){
-    if (noConflict) $.noConflict(true);
-    var vals = values;
-    if (dynamic && vals.constructor === Array) {
-      var default_value = parseFloat(value);
-      var min = parseFloat(vals[0]);
-      var max = parseFloat(vals[vals.length-1]);
-      var wstep = step;
-      var wlabels = [default_value];
-      var init_label = default_value;
-    } else {
-      var min = 0;
-      if (dynamic) {
-        var max = Object.keys(vals).length - 1;
-        var init_label = labels[value];
-        var default_value = values[value];
-      } else {
-        var max = vals.length - 1;
-        var init_label = labels[value];
-        var default_value = value;
-      }
-      var wstep = 1;
-      var wlabels = labels;
-    }
-    function adjustFontSize(text) {
-      var width_ratio = (text.parent().width()/8)/text.val().length;
-      var size = Math.min(0.9, Math.max(0.6, width_ratio))+'em';
-      text.css('font-size', size);
-    }
-    var slider = $('#_anim_widget'+id+'_'+dim);
-    slider.slider({
-      animate: "fast",
-      min: min,
-      max: max,
-      step: wstep,
-      value: default_value,
-      dim_vals: vals,
-      dim_labels: wlabels,
-      next_vals: next_vals,
-      slide: function(event, ui) {
-        var vals = slider.slider("option", "dim_vals");
-        var next_vals = slider.slider("option", "next_vals");
-        var dlabels = slider.slider("option", "dim_labels");
-        if (dynamic) {
-          var dim_val = ui.value;
-          if (vals.constructor === Array) {
-            var label = ui.value;
-          } else {
-            var label = dlabels[ui.value];
-          }
-        } else {
-          var dim_val = vals[ui.value];
-          var label = dlabels[ui.value];
-        }
-        var text = $('#textInput'+id+'_'+dim);
-        text.val(label);
-        adjustFontSize(text);
-        HoloViews.index[plot_id].set_frame(dim_val, dim_idx);
-        if (Object.keys(next_vals).length > 0) {
-          var new_vals = next_vals[dim_val];
-          var next_widget = $('#_anim_widget'+id+'_'+next_dim);
-          update_widget(next_widget, new_vals);
-        }
-      }
-    });
-    slider.keypress(function(event) {
-      if (event.which == 80 || event.which == 112) {
-        var start = slider.slider("option", "value");
-        var stop =  slider.slider("option", "max");
-        for (var i=start; i<=stop; i++) {
-          var delay = i*delay;
-          $.proxy(function doSetTimeout(i) { setTimeout($.proxy(function() {
-            var val = {value:i};
-            slider.slider('value',i);
-            slider.slider("option", "slide")(null, val);
-          }, slider), delay);}, slider)(i);
-        }
-      }
-      if (event.which == 82 || event.which == 114) {
-        var start = slider.slider("option", "value");
-        var stop =  slider.slider("option", "min");
-        var count = 0;
-        for (var i=start; i>=stop; i--) {
-          var delay = count*delay;
-          count = count + 1;
-          $.proxy(function doSetTimeout(i) { setTimeout($.proxy(function() {
-            var val = {value:i};
-            slider.slider('value',i);
-            slider.slider("option", "slide")(null, val);
-          }, slider), delay);}, slider)(i);
-        }
-      }
-    });
-    var textInput = $('#textInput'+id+'_'+dim)
-    textInput.val(init_label);
-    adjustFontSize(textInput);
-  });
-}
-
-function init_dropdown(id, plot_id, dim, vals, value, next_vals, labels, next_dim, dim_idx, dynamic) {
-  var widget = $("#_anim_widget"+id+'_'+dim);
-  widget.data('values', vals)
-  for (var i=0; i<vals.length; i++){
-    if (dynamic) {
-      var val = vals[i];
-    } else {
-      var val = i;
-    }
-    widget.append($("<option>", {
-      value: val,
-      text: labels[i]
-    }));
-  };
-  widget.data("next_vals", next_vals);
-  widget.val(value);
-  widget.on('change', function(event, ui) {
-    if (dynamic) {
-      var dim_val = parseInt(this.value);
-    } else {
-      var dim_val = $.data(this, 'values')[this.value];
-    }
-    var next_vals = $.data(this, "next_vals");
-    if (Object.keys(next_vals).length > 0) {
-      var new_vals = next_vals[dim_val];
-      var next_widget = $('#_anim_widget'+id+'_'+next_dim);
-      update_widget(next_widget, new_vals);
-    }
-    var widgets = HoloViews.index[plot_id]
-    if (widgets) {
-      widgets.set_frame(dim_val, dim_idx);
-    }
-  });
-}
-
-
-if (window.HoloViews === undefined) {
-  window.HoloViews = {}
-  window.PyViz = window.HoloViews
-} else if (window.PyViz === undefined) {
-  window.PyViz = window.HoloViews
-}
-
-
-var _namespace = {
-  init_slider: init_slider,
-  init_dropdown: init_dropdown,
-  comms: {},
-  comm_status: {},
-  index: {},
-  plot_index: {},
-  kernels: {},
-  receivers: {}
-}
-
-for (var k in _namespace) {
-  if (!(k in window.HoloViews)) {
-    window.HoloViews[k] = _namespace[k];
-  }
-}
-
-// Define Bokeh specific subclasses
-function BokehSelectionWidget() {
-  SelectionWidget.apply(this, arguments);
-}
-
-function BokehScrubberWidget() {
-  ScrubberWidget.apply(this, arguments);
-}
-
-// Let them inherit from the baseclasses
-BokehSelectionWidget.prototype = Object.create(SelectionWidget.prototype);
-BokehScrubberWidget.prototype = Object.create(ScrubberWidget.prototype);
-
-// Define methods to override on widgets
-var BokehMethods = {
-  update_cache : function(){
-    for (var index in this.frames) {
-      this.frames[index] = JSON.parse(this.frames[index]);
-    }
-  },
-  update : function(current){
-    if (current === undefined) {
-      return;
-    }
-    var data = this.frames[current];
-    if (data !== undefined) {
-      if (data.root in HoloViews.plot_index) {
-        var doc = HoloViews.plot_index[data.root].model.document;
-      } else {
-        var doc = Bokeh.index[data.root].model.document;
-      }
-      doc.apply_json_patch(data.content);
-    }
-  },
-  init_comms: function() {
-    if (Bokeh.protocol !== undefined) {
-      this.receiver = new Bokeh.protocol.Receiver()
-    } else {
-      this.receiver = null;
-    }
-    return HoloViewsWidget.prototype.init_comms.call(this);
-  },
-  process_msg : function(msg) {
-    if (this.plot_id in HoloViews.plot_index) {
-      var doc = HoloViews.plot_index[this.plot_id].model.document;
-    } else {
-      var doc = Bokeh.index[this.plot_id].model.document;
-    }
-    if (this.receiver === null) { return }
-    var receiver = this.receiver;
-    if (msg.buffers.length > 0) {
-      receiver.consume(msg.buffers[0].buffer)
-    } else {
-      receiver.consume(msg.content.data)
-    }
-    const comm_msg = receiver.message;
-    if ((comm_msg != null) && (doc != null)) {
-      doc.apply_json_patch(comm_msg.content, comm_msg.buffers)
-    }
-  }
-}
-
-// Extend Bokeh widgets with backend specific methods
-extend(BokehSelectionWidget.prototype, BokehMethods);
-extend(BokehScrubberWidget.prototype, BokehMethods);
-
-window.HoloViews.BokehSelectionWidget = BokehSelectionWidget
-window.HoloViews.BokehScrubberWidget = BokehScrubberWidget
-</script>
-<script type="text/javascript">
-    function JupyterCommManager() {
-    }
-
-    JupyterCommManager.prototype.register_target = function(plot_id, comm_id, msg_handler) {
-      if (window.comm_manager || ((window.Jupyter !== undefined) && (Jupyter.notebook.kernel != null))) {
-        var comm_manager = window.comm_manager || Jupyter.notebook.kernel.comm_manager;
-        comm_manager.register_target(comm_id, function(comm) {
-          comm.on_msg(msg_handler);
-        });
-      } else if ((plot_id in window.PyViz.kernels) && (window.PyViz.kernels[plot_id])) {
-        window.PyViz.kernels[plot_id].registerCommTarget(comm_id, function(comm) {
-          comm.onMsg = msg_handler;
-        });
-      }
-    }
-
-    JupyterCommManager.prototype.get_client_comm = function(plot_id, comm_id, msg_handler) {
-      if (comm_id in window.PyViz.comms) {
-        return window.PyViz.comms[comm_id];
-      } else if (window.comm_manager || ((window.Jupyter !== undefined) && (Jupyter.notebook.kernel != null))) {
-        var comm_manager = window.comm_manager || Jupyter.notebook.kernel.comm_manager;
-        var comm = comm_manager.new_comm(comm_id, {}, {}, {}, comm_id);
-        if (msg_handler) {
-          comm.on_msg(msg_handler);
-        }
-      } else if ((plot_id in window.PyViz.kernels) && (window.PyViz.kernels[plot_id])) {
-        var comm = window.PyViz.kernels[plot_id].connectToComm(comm_id);
-        comm.open();
-        if (msg_handler) {
-          comm.onMsg = msg_handler;
-        }
-      }
-
-      window.PyViz.comms[comm_id] = comm;
-      return comm;
-    }
-
-    window.PyViz.comm_manager = new JupyterCommManager();
-    </script>
-
-<link rel="stylesheet" href="https://cdn.pydata.org/bokeh/release/bokeh-1.0.4.min.css">
-<link rel="stylesheet" href="https://cdn.pydata.org/bokeh/release/bokeh-widgets-1.0.4.min.css">
-<link rel="stylesheet" href="https://cdn.pydata.org/bokeh/release/bokeh-tables-1.0.4.min.css">
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
-<link rel="stylesheet" href="https://code.jquery.com/ui/1.10.4/themes/smoothness/jquery-ui.css">
-<style>div.hololayout {
-  display: flex;
-  align-items: center;
-  margin: 0;
-}
-
-div.holoframe {
-  width: 75%;
-}
-
-div.holowell {
-  display: flex;
-  align-items: center;
-}
-
-form.holoform {
-  background-color: #fafafa;
-  border-radius: 5px;
-  overflow: hidden;
-  padding-left: 0.8em;
-  padding-right: 0.8em;
-  padding-top: 0.4em;
-  padding-bottom: 0.4em;
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.05);
-  margin-bottom: 20px;
-  border: 1px solid #e3e3e3;
-}
-
-div.holowidgets {
-  padding-right: 0;
-  width: 25%;
-}
-
-div.holoslider {
-  min-height: 0 !important;
-  height: 0.8em;
-  width: 100%;
-}
-
-div.holoformgroup {
-  padding-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-div.hologroup {
-  padding-left: 0;
-  padding-right: 0.8em;
-  width: 100%;
-}
-
-.holoselect {
-  width: 92%;
-  margin-left: 0;
-  margin-right: 0;
-}
-
-.holotext {
-  padding-left:  0.5em;
-  padding-right: 0;
-  width: 100%;
-}
-
-.holowidgets .ui-resizable-se {
-  visibility: hidden
-}
-
-.holoframe > .ui-resizable-se {
-  visibility: hidden
-}
-
-.holowidgets .ui-resizable-s {
-  visibility: hidden
-}
-
-
-/* CSS rules for noUISlider based slider used by JupyterLab extension  */
-
-.noUi-handle {
-  width: 20px !important;
-  height: 20px !important;
-  left: -5px !important;
-  top: -5px !important;
-}
-
-.noUi-handle:before, .noUi-handle:after {
-  visibility: hidden;
-  height: 0px;
-}
-
-.noUi-target {
-  margin-left: 0.5em;
-  margin-right: 0.5em;
-}
-
-div.bk-hbox {
-    display: flex;
-    justify-content: center;
-}
-
-div.bk-hbox div.bk-plot {
-    padding: 8px;
-}
-
-div.bk-hbox div.bk-data-table {
-    padding: 20px;
-}
-</style><div style='display: table; margin: 0 auto;'>
-
-
-
-
-
-
-  <div class="bk-root" id="a7541a6a-fc8b-45a4-91f5-828da842eae1" data-root-id="1004"></div>
-
-<script type="text/javascript">
-  (function(root) {
-  function embed_document(root) {
+<!DOCTYPE html>
+<html lang="en">
+  
+  <head>
     
-  var docs_json = {"bd620df2-370e-4aad-b5a2-b4a4d06f6e61":{"roots":{"references":[{"attributes":{"below":[{"id":"1012","type":"LinearAxis"}],"left":[{"id":"1017","type":"LinearAxis"}],"min_border_bottom":10,"min_border_left":10,"min_border_right":10,"min_border_top":10,"plot_height":800,"plot_width":1000,"renderers":[{"id":"1012","type":"LinearAxis"},{"id":"1016","type":"Grid"},{"id":"1017","type":"LinearAxis"},{"id":"1021","type":"Grid"},{"id":"1030","type":"BoxAnnotation"},{"id":"1041","type":"GlyphRenderer"}],"title":{"id":"1003","type":"Title"},"toolbar":{"id":"1027","type":"Toolbar"},"x_range":{"id":"1001","type":"Range1d"},"x_scale":{"id":"1008","type":"LinearScale"},"y_range":{"id":"1002","type":"Range1d"},"y_scale":{"id":"1010","type":"LinearScale"}},"id":"1004","subtype":"Figure","type":"Plot"},{"attributes":{},"id":"1024","type":"WheelZoomTool"},{"attributes":{"grid_line_color":{"value":null},"plot":{"id":"1004","subtype":"Figure","type":"Plot"},"ticker":{"id":"1013","type":"BasicTicker"}},"id":"1016","type":"Grid"},{"attributes":{},"id":"1023","type":"PanTool"},{"attributes":{"overlay":{"id":"1030","type":"BoxAnnotation"}},"id":"1025","type":"BoxZoomTool"},{"attributes":{"callback":null,"data":{"x":{"__ndarray__":"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","dtype":"float64","shape":[200]},"y":{"__ndarray__":"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","dtype":"float64","shape":[200]}},"selected":{"id":"1036","type":"Selection"},"selection_policy":{"id":"1053","type":"UnionRenderers"}},"id":"1035","type":"ColumnDataSource"},{"attributes":{},"id":"1022","type":"SaveTool"},{"attributes":{},"id":"1010","type":"LinearScale"},{"attributes":{"fill_alpha":0.2,"fill_color":"#30a2da","line_alpha":0.2,"line_color":"black","x":{"field":"x"},"y":{"field":"y"}},"id":"1040","type":"Patch"},{"attributes":{"data_source":{"id":"1035","type":"ColumnDataSource"},"glyph":{"id":"1038","type":"Patch"},"hover_glyph":null,"muted_glyph":{"id":"1040","type":"Patch"},"nonselection_glyph":{"id":"1039","type":"Patch"},"selection_glyph":null,"view":{"id":"1042","type":"CDSView"}},"id":"1041","type":"GlyphRenderer"},{"attributes":{"bottom_units":"screen","fill_alpha":{"value":0.5},"fill_color":{"value":"lightgrey"},"left_units":"screen","level":"overlay","line_alpha":{"value":1.0},"line_color":{"value":"black"},"line_dash":[4,4],"line_width":{"value":2},"plot":null,"render_mode":"css","right_units":"screen","top_units":"screen"},"id":"1030","type":"BoxAnnotation"},{"attributes":{"callback":null,"end":8.619732257829906,"reset_end":8.619732257829906,"reset_start":-0.46712434004426145,"start":-0.46712434004426145,"tags":[[["Value","Value",null]]]},"id":"1001","type":"Range1d"},{"attributes":{},"id":"1013","type":"BasicTicker"},{"attributes":{},"id":"1036","type":"Selection"},{"attributes":{"dimension":1,"grid_line_color":{"value":null},"plot":{"id":"1004","subtype":"Figure","type":"Plot"},"ticker":{"id":"1018","type":"BasicTicker"}},"id":"1021","type":"Grid"},{"attributes":{},"id":"1043","type":"BasicTickFormatter"},{"attributes":{},"id":"1045","type":"BasicTickFormatter"},{"attributes":{"active_drag":"auto","active_inspect":"auto","active_multi":null,"active_scroll":"auto","active_tap":"auto","tools":[{"id":"1022","type":"SaveTool"},{"id":"1023","type":"PanTool"},{"id":"1024","type":"WheelZoomTool"},{"id":"1025","type":"BoxZoomTool"},{"id":"1026","type":"ResetTool"}]},"id":"1027","type":"Toolbar"},{"attributes":{},"id":"1018","type":"BasicTicker"},{"attributes":{},"id":"1008","type":"LinearScale"},{"attributes":{"axis_label":"Density","bounds":"auto","formatter":{"id":"1045","type":"BasicTickFormatter"},"major_label_orientation":"horizontal","plot":{"id":"1004","subtype":"Figure","type":"Plot"},"ticker":{"id":"1018","type":"BasicTicker"}},"id":"1017","type":"LinearAxis"},{"attributes":{"fill_alpha":0.5,"fill_color":"#30a2da","line_alpha":1,"line_color":"black","x":{"field":"x"},"y":{"field":"y"}},"id":"1039","type":"Patch"},{"attributes":{"callback":null,"end":2.0517365238126186,"reset_end":2.0517365238126186,"reset_start":0.0,"tags":[[["Value_density","Density",null]]]},"id":"1002","type":"Range1d"},{"attributes":{},"id":"1026","type":"ResetTool"},{"attributes":{"source":{"id":"1035","type":"ColumnDataSource"}},"id":"1042","type":"CDSView"},{"attributes":{"fill_alpha":0.5,"fill_color":"#30a2da","x":{"field":"x"},"y":{"field":"y"}},"id":"1038","type":"Patch"},{"attributes":{},"id":"1053","type":"UnionRenderers"},{"attributes":{"plot":null,"text":"Loss Distribution","text_color":{"value":"black"},"text_font_size":{"value":"12pt"}},"id":"1003","type":"Title"},{"attributes":{"axis_label":"Loss","bounds":"auto","formatter":{"id":"1043","type":"BasicTickFormatter"},"major_label_orientation":"horizontal","plot":{"id":"1004","subtype":"Figure","type":"Plot"},"ticker":{"id":"1013","type":"BasicTicker"}},"id":"1012","type":"LinearAxis"}],"root_ids":["1004"]},"title":"Bokeh Application","version":"1.0.4"}};
-  var render_items = [{"docid":"bd620df2-370e-4aad-b5a2-b4a4d06f6e61","roots":{"1004":"a7541a6a-fc8b-45a4-91f5-828da842eae1"}}];
-  root.Bokeh.embed.embed_items_notebook(docs_json, render_items);
+      <meta charset="utf-8">
+      <title>Panel</title>
+      
+      
+        
+          
+        <style>
+            .json-formatter-row {
+                  font-family: monospace;
+                }
+                .json-formatter-row,
+                .json-formatter-row a,
+                .json-formatter-row a:hover {
+                  color: black;
+                  text-decoration: none;
+                }
+                .json-formatter-row .json-formatter-row {
+                  margin-left: 1rem;
+                }
+                .json-formatter-row .json-formatter-children.json-formatter-empty {
+                  opacity: 0.5;
+                  margin-left: 1rem;
+                }
+                .json-formatter-row .json-formatter-children.json-formatter-empty:after {
+                  display: none;
+                }
+                .json-formatter-row .json-formatter-children.json-formatter-empty.json-formatter-object:after {
+                  content: "No properties";
+                }
+                .json-formatter-row .json-formatter-children.json-formatter-empty.json-formatter-array:after {
+                  content: "[]";
+                }
+                .json-formatter-row .json-formatter-string,
+                .json-formatter-row .json-formatter-stringifiable {
+                  color: green;
+                  white-space: pre;
+                  word-wrap: break-word;
+                }
+                .json-formatter-row .json-formatter-number {
+                  color: blue;
+                }
+                .json-formatter-row .json-formatter-boolean {
+                  color: red;
+                }
+                .json-formatter-row .json-formatter-null {
+                  color: #855A00;
+                }
+                .json-formatter-row .json-formatter-undefined {
+                  color: #ca0b69;
+                }
+                .json-formatter-row .json-formatter-function {
+                  color: #FF20ED;
+                }
+                .json-formatter-row .json-formatter-date {
+                  background-color: rgba(0, 0, 0, 0.05);
+                }
+                .json-formatter-row .json-formatter-url {
+                  text-decoration: underline;
+                  color: blue;
+                  cursor: pointer;
+                }
+                .json-formatter-row .json-formatter-bracket {
+                  color: blue;
+                }
+                .json-formatter-row .json-formatter-key {
+                  color: #00008B;
+                  padding-right: 0.2rem;
+                }
+                .json-formatter-row .json-formatter-toggler-link {
+                  cursor: pointer;
+                }
+                .json-formatter-row .json-formatter-toggler {
+                  line-height: 1.2rem;
+                  font-size: 0.7rem;
+                  vertical-align: middle;
+                  opacity: 0.6;
+                  cursor: pointer;
+                  padding-right: 0.2rem;
+                }
+                .json-formatter-row .json-formatter-toggler:after {
+                  display: inline-block;
+                  transition: transform 100ms ease-in;
+                  content: "\25BA";
+                }
+                .json-formatter-row > a > .json-formatter-preview-text {
+                  opacity: 0;
+                  transition: opacity 0.15s ease-in;
+                  font-style: italic;
+                }
+                .json-formatter-row:hover > a > .json-formatter-preview-text {
+                  opacity: 0.6;
+                }
+                .json-formatter-row.json-formatter-open > .json-formatter-toggler-link .json-formatter-toggler:after {
+                  transform: rotate(90deg);
+                }
+                .json-formatter-row.json-formatter-open > .json-formatter-children:after {
+                  display: inline-block;
+                }
+                .json-formatter-row.json-formatter-open > a > .json-formatter-preview-text {
+                  display: none;
+                }
+                .json-formatter-row.json-formatter-open.json-formatter-empty:after {
+                  display: block;
+                }
+                .json-formatter-dark.json-formatter-row {
+                  font-family: monospace;
+                }
+                .json-formatter-dark.json-formatter-row,
+                .json-formatter-dark.json-formatter-row a,
+                .json-formatter-dark.json-formatter-row a:hover {
+                  color: white;
+                  text-decoration: none;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-row {
+                  margin-left: 1rem;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-children.json-formatter-empty {
+                  opacity: 0.5;
+                  margin-left: 1rem;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-children.json-formatter-empty:after {
+                  display: none;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-children.json-formatter-empty.json-formatter-object:after {
+                  content: "No properties";
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-children.json-formatter-empty.json-formatter-array:after {
+                  content: "[]";
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-string,
+                .json-formatter-dark.json-formatter-row .json-formatter-stringifiable {
+                  color: #31F031;
+                  white-space: pre;
+                  word-wrap: break-word;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-number {
+                  color: #66C2FF;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-boolean {
+                  color: #EC4242;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-null {
+                  color: #EEC97D;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-undefined {
+                  color: #ef8fbe;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-function {
+                  color: #FD48CB;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-date {
+                  background-color: rgba(255, 255, 255, 0.05);
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-url {
+                  text-decoration: underline;
+                  color: #027BFF;
+                  cursor: pointer;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-bracket {
+                  color: #9494FF;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-key {
+                  color: #23A0DB;
+                  padding-right: 0.2rem;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-toggler-link {
+                  cursor: pointer;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-toggler {
+                  line-height: 1.2rem;
+                  font-size: 0.7rem;
+                  vertical-align: middle;
+                  opacity: 0.6;
+                  cursor: pointer;
+                  padding-right: 0.2rem;
+                }
+                .json-formatter-dark.json-formatter-row .json-formatter-toggler:after {
+                  display: inline-block;
+                  transition: transform 100ms ease-in;
+                  content: "\25BA";
+                }
+                .json-formatter-dark.json-formatter-row > a > .json-formatter-preview-text {
+                  opacity: 0;
+                  transition: opacity 0.15s ease-in;
+                  font-style: italic;
+                }
+                .json-formatter-dark.json-formatter-row:hover > a > .json-formatter-preview-text {
+                  opacity: 0.6;
+                }
+                .json-formatter-dark.json-formatter-row.json-formatter-open > .json-formatter-toggler-link .json-formatter-toggler:after {
+                  transform: rotate(90deg);
+                }
+                .json-formatter-dark.json-formatter-row.json-formatter-open > .json-formatter-children:after {
+                  display: inline-block;
+                }
+                .json-formatter-dark.json-formatter-row.json-formatter-open > a > .json-formatter-preview-text {
+                  display: none;
+                }
+                .json-formatter-dark.json-formatter-row.json-formatter-open.json-formatter-empty:after {
+                  display: block;
+                }
 
-  }
-  if (root.Bokeh !== undefined) {
-    embed_document(root);
-  } else {
-    var attempts = 0;
-    var timer = setInterval(function(root) {
-      if (root.Bokeh !== undefined) {
-        embed_document(root);
-        clearInterval(timer);
-      }
-      attempts++;
-      if (attempts > 100) {
-        console.log("Bokeh: ERROR: Unable to run BokehJS code because BokehJS library is missing");
-        clearInterval(timer);
-      }
-    }, 10, root)
-  }
-})(window);
-</script>
-</div>
+        </style>
+        <style>
+            table.panel-df {
+                    margin-left: auto;
+                    margin-right: auto;
+                    border: none;
+                    border-collapse: collapse;
+                    border-spacing: 0;
+                    color: black;
+                    font-size: 12px;
+                    table-layout: fixed;
+                    width: 100%;
+                }
+
+                .panel-df tr, th, td {
+                    text-align: right;
+                    vertical-align: middle;
+                    padding: 0.5em 0.5em !important;
+                    line-height: normal;
+                    white-space: normal;
+                    max-width: none;
+                    border: none;
+                }
+
+                .panel-df tbody {
+                    display: table-row-group;
+                    vertical-align: middle;
+                    border-color: inherit;
+                }
+
+                .panel-df tbody tr:nth-child(odd) {
+                    background: #f5f5f5;
+                }
+
+                .panel-df thead {
+                    border-bottom: 1px solid black;
+                    vertical-align: bottom;
+                }
+
+                .panel-df tr:hover {
+                    background: lightblue !important;
+                    cursor: pointer;
+                }
+
+        </style>
+        <style>
+            .codehilite .hll { background-color: #ffffcc }
+                .codehilite  { background: #f8f8f8; }
+                .codehilite .c { color: #408080; font-style: italic } /* Comment */
+                .codehilite .err { border: 1px solid #FF0000 } /* Error */
+                .codehilite .k { color: #008000; font-weight: bold } /* Keyword */
+                .codehilite .o { color: #666666 } /* Operator */
+                .codehilite .ch { color: #408080; font-style: italic } /* Comment.Hashbang */
+                .codehilite .cm { color: #408080; font-style: italic } /* Comment.Multiline */
+                .codehilite .cp { color: #BC7A00 } /* Comment.Preproc */
+                .codehilite .cpf { color: #408080; font-style: italic } /* Comment.PreprocFile */
+                .codehilite .c1 { color: #408080; font-style: italic } /* Comment.Single */
+                .codehilite .cs { color: #408080; font-style: italic } /* Comment.Special */
+                .codehilite .gd { color: #A00000 } /* Generic.Deleted */
+                .codehilite .ge { font-style: italic } /* Generic.Emph */
+                .codehilite .gr { color: #FF0000 } /* Generic.Error */
+                .codehilite .gh { color: #000080; font-weight: bold } /* Generic.Heading */
+                .codehilite .gi { color: #00A000 } /* Generic.Inserted */
+                .codehilite .go { color: #888888 } /* Generic.Output */
+                .codehilite .gp { color: #000080; font-weight: bold } /* Generic.Prompt */
+                .codehilite .gs { font-weight: bold } /* Generic.Strong */
+                .codehilite .gu { color: #800080; font-weight: bold } /* Generic.Subheading */
+                .codehilite .gt { color: #0044DD } /* Generic.Traceback */
+                .codehilite .kc { color: #008000; font-weight: bold } /* Keyword.Constant */
+                .codehilite .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */
+                .codehilite .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */
+                .codehilite .kp { color: #008000 } /* Keyword.Pseudo */
+                .codehilite .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */
+                .codehilite .kt { color: #B00040 } /* Keyword.Type */
+                .codehilite .m { color: #666666 } /* Literal.Number */
+                .codehilite .s { color: #BA2121 } /* Literal.String */
+                .codehilite .na { color: #7D9029 } /* Name.Attribute */
+                .codehilite .nb { color: #008000 } /* Name.Builtin */
+                .codehilite .nc { color: #0000FF; font-weight: bold } /* Name.Class */
+                .codehilite .no { color: #880000 } /* Name.Constant */
+                .codehilite .nd { color: #AA22FF } /* Name.Decorator */
+                .codehilite .ni { color: #999999; font-weight: bold } /* Name.Entity */
+                .codehilite .ne { color: #D2413A; font-weight: bold } /* Name.Exception */
+                .codehilite .nf { color: #0000FF } /* Name.Function */
+                .codehilite .nl { color: #A0A000 } /* Name.Label */
+                .codehilite .nn { color: #0000FF; font-weight: bold } /* Name.Namespace */
+                .codehilite .nt { color: #008000; font-weight: bold } /* Name.Tag */
+                .codehilite .nv { color: #19177C } /* Name.Variable */
+                .codehilite .ow { color: #AA22FF; font-weight: bold } /* Operator.Word */
+                .codehilite .w { color: #bbbbbb } /* Text.Whitespace */
+                .codehilite .mb { color: #666666 } /* Literal.Number.Bin */
+                .codehilite .mf { color: #666666 } /* Literal.Number.Float */
+                .codehilite .mh { color: #666666 } /* Literal.Number.Hex */
+                .codehilite .mi { color: #666666 } /* Literal.Number.Integer */
+                .codehilite .mo { color: #666666 } /* Literal.Number.Oct */
+                .codehilite .sa { color: #BA2121 } /* Literal.String.Affix */
+                .codehilite .sb { color: #BA2121 } /* Literal.String.Backtick */
+                .codehilite .sc { color: #BA2121 } /* Literal.String.Char */
+                .codehilite .dl { color: #BA2121 } /* Literal.String.Delimiter */
+                .codehilite .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */
+                .codehilite .s2 { color: #BA2121 } /* Literal.String.Double */
+                .codehilite .se { color: #BB6622; font-weight: bold } /* Literal.String.Escape */
+                .codehilite .sh { color: #BA2121 } /* Literal.String.Heredoc */
+                .codehilite .si { color: #BB6688; font-weight: bold } /* Literal.String.Interpol */
+                .codehilite .sx { color: #008000 } /* Literal.String.Other */
+                .codehilite .sr { color: #BB6688 } /* Literal.String.Regex */
+                .codehilite .s1 { color: #BA2121 } /* Literal.String.Single */
+                .codehilite .ss { color: #19177C } /* Literal.String.Symbol */
+                .codehilite .bp { color: #008000 } /* Name.Builtin.Pseudo */
+                .codehilite .fm { color: #0000FF } /* Name.Function.Magic */
+                .codehilite .vc { color: #19177C } /* Name.Variable.Class */
+                .codehilite .vg { color: #19177C } /* Name.Variable.Global */
+                .codehilite .vi { color: #19177C } /* Name.Variable.Instance */
+                .codehilite .vm { color: #19177C } /* Name.Variable.Magic */
+                .codehilite .il { color: #666666 } /* Literal.Number.Integer.Long */
+
+                .markdown h1 { margin-block-start: 0.34em }
+                .markdown h2 { margin-block-start: 0.42em }
+                .markdown h3 { margin-block-start: 0.5em }
+                .markdown h4 { margin-block-start: 0.67em }
+                .markdown h5 { margin-block-start: 0.84em }
+                .markdown h6 { margin-block-start: 1.17em }
+                .markdown ul { padding-inline-start: 2em }
+                .markdown ol { padding-inline-start: 2em }
+                .markdown strong { font-weight: 600 }
+                .markdown a { color: -webkit-link }
+                .markdown a { color: -moz-hyperlinkText }
+
+        </style>
+        <style>
+            .widget-box {
+                	min-height: 20px;
+                	background-color: #f5f5f5;
+                	border: 1px solid #e3e3e3 !important;
+                	border-radius: 4px;
+                	-webkit-box-shadow: inset 0 1px 1px rgba(0,0,0,.05);
+                	box-shadow: inset 0 1px 1px rgba(0,0,0,.05);
+                	overflow-x: hidden;
+                	overflow-y: hidden;
+                }
+
+                .scrollable {
+                  overflow: scroll;
+                }
+
+                progress {
+                	appearance: none;
+                	-moz-appearance: none;
+                	-webkit-appearance: none;
+
+                	border: none;
+                	height: 20px;
+                	background-color: whiteSmoke;
+                	border-radius: 3px;
+                	box-shadow: 0 2px 3px rgba(0,0,0,.5) inset;
+                	color: royalblue;
+                	position: relative;
+                	margin: 0 0 1.5em;
+                }
+
+                progress[value]::-webkit-progress-bar {
+                	background-color: whiteSmoke;
+                	border-radius: 3px;
+                	box-shadow: 0 2px 3px rgba(0,0,0,.5) inset;
+                }
+
+                progress[value]::-webkit-progress-value {
+                	position: relative;
+
+                	background-size: 35px 20px, 100% 100%, 100% 100%;
+                	border-radius:3px;
+                }
+
+                progress.active:not([value])::before {
+                	background-position: 10%;
+                	animation-name: stripes;
+                	animation-duration: 3s;
+                	animation-timing-function: linear;
+                	animation-iteration-count: infinite;
+                }
+
+                progress[value]::-moz-progress-bar {
+                	background-size: 35px 20px, 100% 100%, 100% 100%;
+                	border-radius:3px;
+                }
+
+                progress:not([value])::-moz-progress-bar {
+                	border-radius:3px;
+                	background:
+                	linear-gradient(-45deg, transparent 33%, rgba(0, 0, 0, 0.2) 33%, rgba(0, 0, 0, 0.2) 66%, transparent 66%) left/2.5em 1.5em;
+
+                }
+
+                progress.active:not([value])::-moz-progress-bar {
+                	background-position: 10%;
+                	animation-name: stripes;
+                	animation-duration: 3s;
+                	animation-timing-function: linear;
+                	animation-iteration-count: infinite;
+                }
+
+                progress.active:not([value])::-webkit-progress-bar {
+                	background-position: 10%;
+                	animation-name: stripes;
+                	animation-duration: 3s;
+                	animation-timing-function: linear;
+                	animation-iteration-count: infinite;
+                }
+
+                progress.primary[value]::-webkit-progress-value { background-color: #007bff; }
+                progress.primary:not([value])::before { background-color: #007bff; }
+                progress.primary:not([value])::-webkit-progress-bar { background-color: #007bff; }
+                progress.primary::-moz-progress-bar { background-color: #007bff; }
+
+                progress.secondary[value]::-webkit-progress-value { background-color: #6c757d; }
+                progress.secondary:not([value])::before { background-color: #6c757d; }
+                progress.secondary:not([value])::-webkit-progress-bar { background-color: #6c757d; }
+                progress.secondary::-moz-progress-bar { background-color: #6c757d; }
+
+                progress.success[value]::-webkit-progress-value { background-color: #28a745; }
+                progress.success:not([value])::before { background-color: #28a745; }
+                progress.success:not([value])::-webkit-progress-bar { background-color: #28a745; }
+                progress.success::-moz-progress-bar { background-color: #28a745; }
+
+                progress.danger[value]::-webkit-progress-value { background-color: #dc3545; }
+                progress.danger:not([value])::before { background-color: #dc3545; }
+                progress.danger:not([value])::-webkit-progress-bar { background-color: #dc3545; }
+                progress.danger::-moz-progress-bar { background-color: #dc3545; }
+
+                progress.warning[value]::-webkit-progress-value { background-color: #ffc107; }
+                progress.warning:not([value])::before { background-color: #ffc107; }
+                progress.warning:not([value])::-webkit-progress-bar { background-color: #ffc107; }
+                progress.warning::-moz-progress-bar { background-color: #ffc107; }
+
+                progress.info[value]::-webkit-progress-value { background-color: #17a2b8; }
+                progress.info:not([value])::before { background-color: #17a2b8; }
+                progress.info:not([value])::-webkit-progress-bar { background-color: #17a2b8; }
+                progress.info::-moz-progress-bar { background-color: #17a2b8; }
+
+                progress.light[value]::-webkit-progress-value { background-color: #f8f9fa; }
+                progress.light:not([value])::before { background-color: #f8f9fa; }
+                progress.light:not([value])::-webkit-progress-bar { background-color: #f8f9fa; }
+                progress.light::-moz-progress-bar { background-color: #f8f9fa; }
+
+                progress.dark[value]::-webkit-progress-value { background-color: #343a40; }
+                progress.dark:not([value])::-webkit-progress-bar { background-color: #343a40; }
+                progress.dark:not([value])::before { background-color: #343a40; }
+                progress.dark::-moz-progress-bar { background-color: #343a40; }
+
+                progress:not([value])::-webkit-progress-bar {
+                	border-radius: 3px;
+                	background:
+                	linear-gradient(-45deg, transparent 33%, rgba(0, 0, 0, 0.2) 33%, rgba(0, 0, 0, 0.2) 66%, transparent 66%) left/2.5em 1.5em;
+                }
+                progress:not([value])::before {
+                	content:" ";
+                	position:absolute;
+                	height: 20px;
+                	top:0;
+                	left:0;
+                	right:0;
+                	bottom:0;
+                	border-radius: 3px;
+                	background:
+                	linear-gradient(-45deg, transparent 33%, rgba(0, 0, 0, 0.2) 33%, rgba(0, 0, 0, 0.2) 66%, transparent 66%) left/2.5em 1.5em;
+                }
+
+                @keyframes stripes {
+                  from {background-position: 0%}
+                  to {background-position: 100%}
+                }
+        </style>
+        
+        
+          
+        <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-2.0.2.min.js" integrity="sha384-ufR9RFnRs6lniiaFvtJziE0YeidtAgBRH6ux2oUItHw5WTvE1zuk9uzhUU/FJXDp" crossorigin="anonymous"></script>
+        <script type="text/javascript">
+            Bokeh.set_log_level("info");
+        </script>
+        
+      
+      
+    
+  </head>
+  
+  
+  <body>
+    
+      
+        
+          
+          
+            
+              <div class="bk-root" id="4203e542-00d6-4a1b-9da9-36c5af9ab095" data-root-id="1337"></div>
+            
+          
+        
+      
+      
+        <script type="application/json" id="1504">
+          {"3107ec67-a3d8-40fd-a31d-06b095957316":{"roots":{"references":[{"attributes":{"children":[{"id":"1338"},{"id":"1341"},{"id":"1390"}],"margin":[0,0,0,0],"name":"Row01989","tags":["embedded"]},"id":"1337","type":"Row"},{"attributes":{"axis":{"id":"1354"},"dimension":1,"grid_line_color":null,"ticker":null},"id":"1357","type":"Grid"},{"attributes":{},"id":"1348","type":"LinearScale"},{"attributes":{"text":"Loss Distribution"},"id":"1342","type":"Title"},{"attributes":{"align":null,"below":[{"id":"1350"}],"center":[{"id":"1353"},{"id":"1357"}],"left":[{"id":"1354"}],"margin":null,"min_border_bottom":10,"min_border_left":10,"min_border_right":10,"min_border_top":10,"plot_height":800,"plot_width":1000,"renderers":[{"id":"1376"}],"sizing_mode":"fixed","title":{"id":"1342"},"toolbar":{"id":"1364"},"x_range":{"id":"1339"},"x_scale":{"id":"1346"},"y_range":{"id":"1340"},"y_scale":{"id":"1348"}},"id":"1341","subtype":"Figure","type":"Plot"},{"attributes":{},"id":"1379","type":"BasicTickFormatter"},{"attributes":{"margin":[5,5,5,5],"name":"HSpacer01993","sizing_mode":"stretch_width"},"id":"1338","type":"Spacer"},{"attributes":{"active_drag":"auto","active_inspect":"auto","active_multi":null,"active_scroll":"auto","active_tap":"auto","tools":[{"id":"1358"},{"id":"1359"},{"id":"1360"},{"id":"1361"},{"id":"1362"}]},"id":"1364","type":"Toolbar"},{"attributes":{},"id":"1351","type":"BasicTicker"},{"attributes":{"axis_label":"Loss","bounds":"auto","formatter":{"id":"1379"},"major_label_orientation":"horizontal","ticker":{"id":"1351"}},"id":"1350","type":"LinearAxis"},{"attributes":{},"id":"1360","type":"WheelZoomTool"},{"attributes":{},"id":"1355","type":"BasicTicker"},{"attributes":{},"id":"1358","type":"SaveTool"},{"attributes":{"data":{"x":{"__ndarray__":"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","dtype":"float64","shape":[200]},"y":{"__ndarray__":"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","dtype":"float64","shape":[200]}},"selected":{"id":"1371"},"selection_policy":{"id":"1389"}},"id":"1370","type":"ColumnDataSource"},{"attributes":{},"id":"1346","type":"LinearScale"},{"attributes":{"end":14.966873070801391,"reset_end":14.966873070801391,"reset_start":-0.6961544962774652,"start":-0.6961544962774652,"tags":[[["Value","Value",null]]]},"id":"1339","type":"Range1d"},{"attributes":{"source":{"id":"1370"}},"id":"1377","type":"CDSView"},{"attributes":{},"id":"1381","type":"BasicTickFormatter"},{"attributes":{},"id":"1359","type":"PanTool"},{"attributes":{"axis":{"id":"1350"},"grid_line_color":null,"ticker":null},"id":"1353","type":"Grid"},{"attributes":{"axis_label":"Density","bounds":"auto","formatter":{"id":"1381"},"major_label_orientation":"horizontal","ticker":{"id":"1355"}},"id":"1354","type":"LinearAxis"},{"attributes":{"fill_alpha":0.5,"fill_color":"#30a2da","x":{"field":"x"},"y":{"field":"y"}},"id":"1373","type":"Patch"},{"attributes":{"data_source":{"id":"1370"},"glyph":{"id":"1373"},"hover_glyph":null,"muted_glyph":{"id":"1375"},"nonselection_glyph":{"id":"1374"},"selection_glyph":null,"view":{"id":"1377"}},"id":"1376","type":"GlyphRenderer"},{"attributes":{"bottom_units":"screen","fill_alpha":0.5,"fill_color":"lightgrey","left_units":"screen","level":"overlay","line_alpha":1.0,"line_color":"black","line_dash":[4,4],"line_width":2,"render_mode":"css","right_units":"screen","top_units":"screen"},"id":"1363","type":"BoxAnnotation"},{"attributes":{"margin":[5,5,5,5],"name":"HSpacer01994","sizing_mode":"stretch_width"},"id":"1390","type":"Spacer"},{"attributes":{"overlay":{"id":"1363"}},"id":"1361","type":"BoxZoomTool"},{"attributes":{"fill_alpha":0.5,"fill_color":"#30a2da","line_alpha":1,"x":{"field":"x"},"y":{"field":"y"}},"id":"1374","type":"Patch"},{"attributes":{"fill_alpha":0.2,"fill_color":"#30a2da","line_alpha":0.2,"x":{"field":"x"},"y":{"field":"y"}},"id":"1375","type":"Patch"},{"attributes":{},"id":"1362","type":"ResetTool"},{"attributes":{},"id":"1371","type":"Selection"},{"attributes":{},"id":"1389","type":"UnionRenderers"},{"attributes":{"end":1.5786882663886868,"reset_end":1.5786882663886868,"reset_start":0.0,"tags":[[["Value_density","Density",null]]]},"id":"1340","type":"Range1d"}],"root_ids":["1337"]},"title":"Bokeh Application","version":"2.0.2"}}
+        </script>
+        <script type="text/javascript">
+          (function() {
+            var fn = function() {
+              Bokeh.safely(function() {
+                (function(root) {
+                  function embed_document(root) {
+                    
+                  var docs_json = document.getElementById('1504').textContent;
+                  var render_items = [{"docid":"3107ec67-a3d8-40fd-a31d-06b095957316","root_ids":["1337"],"roots":{"1337":"4203e542-00d6-4a1b-9da9-36c5af9ab095"}}];
+                  root.Bokeh.embed.embed_items(docs_json, render_items);
+                
+                  }
+                  if (root.Bokeh !== undefined) {
+                    embed_document(root);
+                  } else {
+                    var attempts = 0;
+                    var timer = setInterval(function(root) {
+                      if (root.Bokeh !== undefined) {
+                        clearInterval(timer);
+                        embed_document(root);
+                      } else {
+                        attempts++;
+                        if (attempts > 100) {
+                          clearInterval(timer);
+                          console.log("Bokeh: ERROR: Unable to run BokehJS code because BokehJS library is missing");
+                        }
+                      }
+                    }, 10, root)
+                  }
+                })(window);
+              });
+            };
+            if (document.readyState != "loading") fn();
+            else document.addEventListener("DOMContentLoaded", fn);
+          })();
+        </script>
+    
+  </body>
+  
+</html>

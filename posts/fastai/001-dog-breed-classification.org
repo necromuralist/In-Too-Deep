@@ -12,7 +12,7 @@
 #+OPTIONS: ^:{}
 #+OPTIONS: H:5
 #+TOC: headlines 2
-#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-1adfbb92-a038-48bf-a0c7-ae9ad6f5462e.json
+#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-76a13aa0-b070-46dd-b2a1-3a273edd3223.json
 #+BEGIN_SRC python :results none
 %load_ext autoreload
 %autoreload 2
@@ -150,7 +150,7 @@ help(untar_data)
 :     Download `url` to `fname` if `dest` doesn't exist, and un-tgz to folder `dest`.
 : 
 
-Bu, see the next section for why I don't use it.
+But, see the next section for why I don't use it.
 
 #+begin_src python :results none
 # path = untar_data(URLs.PETS)
@@ -369,29 +369,33 @@ Device: ID 0, GeForce GTX 1060 6GB (6069 RAM)
 
 ,*** Current state:
 RAM:    Used    Free   Total       Util
-CPU:   2,373  55,189  64,239 MB   3.69% 
+CPU:   1,896  56,692  64,239 MB   2.95% 
 GPU:   1,291   4,778   6,069 MB  21.28% 
 
 
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
-･ CPU:          0          0      2,373 MB |
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.125
+･ CPU:          0          0      1,896 MB |
+･ GPU:          0          2      1,291 MB |
+
+IPyExperimentsPytorch: Finishing
+
+,*** Experiment finished in 00:00:23 (elapsed wallclock time)
+
+,*** Experiment memory:
+RAM: Consumed       Reclaimed
+CPU:        0        0 MB (  0.00%)
+GPU:        0        0 MB (100.00%)
+
+,*** Current state:
+RAM:    Used    Free   Total       Util
+CPU:   1,896  56,692  64,239 MB   2.95% 
+GPU:   1,291   4,778   6,069 MB  21.28% 
+
+
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.110
+･ CPU:          0          0      1,896 MB |
 ･ GPU:          0          0      1,291 MB |
 #+end_example
-
-
-*** Experiment started with the Pytorch backend
-Device: ID 0, GeForce GTX 1060 6GB (6069 RAM)
-
-
-*** Current state:
-RAM:    Used    Free   Total       Util
-CPU:   2,375  58,710  64,336 MB   3.69% 
-GPU:     916   5,153   6,069 MB  15.10% 
-
-
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
-･ CPU:          0          0      2,375 MB |
-･ GPU:          0          0        916 MB |
 
 
 #+begin_src python :results output :exports both
@@ -399,9 +403,9 @@ learn = cnn_learner(data, resnet34, metrics=error_rate)
 #+end_src
 
 #+RESULTS:
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.454
-: ･ CPU:          0          0      2,499 MB |
-: ･ GPU:         44         42      1,437 MB |
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.456
+: ･ CPU:          0          0      1,985 MB |
+: ･ GPU:        108          0      1,399 MB |
 
 #+begin_example
 Downloading: "https://download.pytorch.org/models/resnet34-333f7ec4.pth" to /home/athena/.torch/models/resnet34-333f7ec4.pth
@@ -570,39 +574,46 @@ Sequential(
     (8): Linear(in_features=512, out_features=37, bias=True)
   )
 )
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.003
-･ CPU:          0          0      2,499 MB |
-･ GPU:          0          0      1,437 MB |
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.002
+･ CPU:          0          0      1,985 MB |
+･ GPU:          0          0      1,399 MB |
 #+end_example
 
 That's a pretty big network, but the main thing to notice is the last layer, which has 37 =out_features= which corresponds to the number of breeds we have in our data-set. If you were working directly with pytorch you'd have to remove the last layer and add it back yourself, but =fast.ai= has done this for us.
 
 Now we need to train it using the [[https://docs.fast.ai/train.html#fit_one_cycle][fit_one_cycle]] method. At first I thought 'one cycle' meant just one pass through the batches but according to the [[https://docs.fast.ai/callbacks.one_cycle.html][documentation]], this is a reference to a training method called the [[https://sgugger.github.io/the-1cycle-policy.html][1Cycle Policy]] proposed by [[https://arxiv.org/abs/1803.09820][Leslie N. Smith]] that changes the hyperparameters to make the model train faster.
 
+**Note:** The latest Ubuntu upgrade seems to have broken a lot of things, including the timer.
+
 #+BEGIN_SRC python :results output :exports both
-TIMER.mesasge = "Finished fitting the ResNet 34 Model."
+TIMER.message = "Finished fitting the ResNet 34 Model."
 with TIMER:
     learn.fit_one_cycle(4)
 #+END_SRC
 
 #+RESULTS:
-: Started: 2019-04-21 18:18:45.894630
-: Ended: 2019-04-21 18:22:09.988508
-: Elapsed: 0:03:24.093878
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:03:24.095
-: ･ CPU:          0          0      2,999 MB |
-: ･ GPU:        151      3,322      1,182 MB |
+:RESULTS:
+: 2020-05-05 15:30:35,121 graeae.timers.timer start: Started: 2020-05-05 15:30:35.121586
+: INFO:graeae.timers.timer:Started: 2020-05-05 15:30:35.121586
+: INFO:graeae.timers.timer:Ended: 2020-05-05 15:32:41.869155
+: 2020-05-05 15:32:41,870 graeae.timers.timer end: Elapsed: 0:02:06.747569
+: INFO:graeae.timers.timer:Elapsed: 0:02:06.747569
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:02:09.476
+: ･ CPU:          0          0      2,400 MB |
+: ･ GPU:         46      4,089      1,446 MB |
+:END:
 
 Depending on how busy the computer is this takes two to three minutes when I run it. Next let's store the parameters for the trained model to disk.
 
 #+BEGIN_SRC python :results output :exports both
-learn.save('stage-1')
+MODELS = Path(os.environ["MODELS"]).expanduser()/"fastai/dogs-and-cats"
+learn.save(MODELS/'stage-1')
 #+END_SRC
 
 #+RESULTS:
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.145
-: ･ CPU:          0          0      3,000 MB |
-: ･ GPU:         -1          0      1,181 MB |
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.078
+: ･ CPU:          0          0      2,401 MB |
+: ･ GPU:          0          0      1,410 MB |
 
 ** Results
    Let's look at how the model did. If I was running this in a jupyter notebook there would be a table output of the accuracy, but I'm not, and I can't find any documentation on how to get that myself, so, tough luck, then. We can look at some things after the fact, though - the [[https://docs.fast.ai/train.html#ClassificationInterpretation][ClassificationInterpretation]] class contains methods to help look at how the model did.
@@ -621,19 +632,23 @@ assert len(data.valid_ds)==len(losses)==len(indexes)
 #+END_SRC
 
 #+RESULTS:
-: tensor([7.1777e+00, 6.8882e+00, 5.8577e+00,  ..., 3.8147e-06, 3.8147e-06,
-:         1.9073e-06])
-: tensor([1298, 1418,  166,  ...,  735,  404,  291])
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.002
-: ･ CPU:          0          0      3,000 MB |
-: ･ GPU:          0          0      1,181 MB |
+: tensor([14.2707, 12.8239, 10.7408,  ..., -0.0000, -0.0000, -0.0000])
+: tensor([1202,  887, 1114,  ..., 1183, 1162, 1466])
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.003
+: ･ CPU:          0          0      2,402 MB |
+: ･ GPU:         -6          0      1,400 MB |
 
-#+BEGIN_SRC python :results output raw :exports both
+#+BEGIN_SRC python :results none
 plot = holoviews.Distribution(losses).opts(title="Loss Distribution", 
                                            xlabel="Loss", 
                                            width=Plot.width, 
                                            height=Plot.height)
-Embed(plot=plot, file_name="loss_distribution")()
+output = Embed(plot=plot, file_name="loss_distribution")
+output()
+#+END_SRC
+
+#+BEGIN_SRC python :results html :exports both
+print(output.source)
 #+END_SRC
 
 #+RESULTS:
@@ -643,7 +658,7 @@ Embed(plot=plot, file_name="loss_distribution")()
 </object>
 #+end_export
 
-Although it looks like there are negative losses, that's just the way the distribution works out, it looks like most of the losses are around zero.
+Although it looks like there are negative losses, that's just the way the distribution works out, most of the losses are around zero.
 
 #+BEGIN_SRC python :results output :exports both
 print(losses.max())
@@ -651,11 +666,11 @@ print(losses.min())
 #+END_SRC
 
 #+RESULTS:
-: tensor(7.1777)
-: tensor(1.9073e-06)
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.001
-: ･ CPU:          0          0      3,000 MB |
-: ･ GPU:          7          0      1,188 MB |
+: tensor(14.2707)
+: tensor(-0.)
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.002
+: ･ CPU:          0          0      2,416 MB |
+: ･ GPU:         -3          0      1,396 MB |
 
 Here's a count of the losses when they are broken up into ten bins.
 
@@ -668,32 +683,26 @@ print(ORG_TABLE(bins, headers="Range Count Percent(%)".split()))
 #+END_SRC
 
 #+RESULTS:
-| Range             | Count | Percent(%) |
-|-------------------+-------+------------|
-| (-0.00718, 0.718] |  1349 |     91.272 |
-| (0.718, 1.436]    |    61 |     4.1272 |
-| (1.436, 2.153]    |    31 |    2.09743 |
-| (2.153, 2.871]    |    14 |   0.947226 |
-| (2.871, 3.589]    |    15 |    1.01488 |
-| (3.589, 4.307]    |     3 |   0.202977 |
-| (4.307, 5.024]    |     2 |   0.135318 |
-| (5.024, 5.742]    |     0 |          0 |
-| (5.742, 6.46]     |     1 |   0.067659 |
-| (6.46, 7.178]     |     2 |   0.135318 |
+| Range            |   Count |   Percent(%) |
+|------------------+---------+--------------|
+| (-0.0143, 1.427] |    1415 |    95.7375   |
+| (1.427, 2.854]   |      31 |     2.09743  |
+| (2.854, 4.281]   |      13 |     0.879567 |
+| (4.281, 5.708]   |       6 |     0.405954 |
+| (5.708, 7.135]   |       7 |     0.473613 |
+| (7.135, 8.562]   |       1 |     0.067659 |
+| (8.562, 9.99]    |       1 |     0.067659 |
+| (9.99, 11.417]   |       2 |     0.135318 |
+| (11.417, 12.844] |       1 |     0.067659 |
+| (12.844, 14.271] |       1 |     0.067659 |
 
 It's not entirely clear to me how to interpret the losses - what does a loss of seven mean, exactly? -0.00744? But, anyway, it looks like the vast majority are less than one.
 
 Another thing we can do is plot the images that had the highest losses.
 
-#+begin_src python :results raw drawer :ipyfile ../../files/posts/fastai/dog-and-cat-breed-classification/top_losses.png
+#+begin_src python :results raw drawer :ipyfile ../../files/posts/fastai/dog-breed-classification/top_losses.png
 interpreter.plot_top_losses(9, figsize=(15,11))
 #+END_SRC
-
-#+RESULTS:
-:results:
-# Out[35]:
-[[file:../../files/posts/fastai/dog-and-cat-breed-classification/top_losses.png]]
-:end:
 
 [[file:top_losses.png]]
 
