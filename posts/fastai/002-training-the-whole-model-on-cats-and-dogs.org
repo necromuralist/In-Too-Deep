@@ -1,0 +1,875 @@
+#+BEGIN_COMMENT
+.. title: Training the whole model on cats and dogs
+.. slug: training-the-whole-model-on-cats-and-dogs
+.. date: 2020-05-09 14:40:39 UTC-07:00
+.. tags: cnn,fastai,deep learning
+.. category: CNN
+.. link: 
+.. description: Training the whole resnet 34 model on the cats and dogs dataset.
+.. type: text
+
+#+END_COMMENT
+#+OPTIONS: ^:{}
+#+OPTIONS: H:5
+#+TOC: headlines 2
+#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-76a13aa0-b070-46dd-b2a1-3a273edd3223.json
+#+BEGIN_SRC python :results none
+%load_ext autoreload
+%autoreload 2
+#+END_SRC
+* Beginning
+  This is lesson one from the [[https://www.fast.ai][fastai]] course [[https://course.fast.ai/index.html][Practical Deep Learning for Coders, v3]], which I assume is the third version of the course, and not a reference to a [[https://www.wikiwand.com/en/Kamen_Rider_V3][Japanese television show]]. It uses the [[http://www.fast.ai/2018/10/02/fastai-ai/][fastai V1 library]] which uses [[https://hackernoon.com/pytorch-1-0-468332ba5163][Pytorch 1.0]] but is an [[https://www.wikiwand.com/en/Convention_over_configuration][opinionated framework]] that bundles some sensible defaults so you don't have to spend as much time building the networks.
+
+The goal is to train a neural network to identify the breeds of dogs and cats based on photos of them. It uses the [[http://www.robots.ox.ac.uk/~vgg/data/pets/][Oxford-IIT Pet Dataset]] which was created by researchers at Oxford University's [[http://www.robots.ox.ac.uk/~vgg/][Visual Geometry Group]].
+** Imports
+*** Python
+    Other than the [[https://docs.python.org/3.4/library/re.html][=re=]] none of the python imports were part of the original lesson. 
+#+begin_src python :results none
+from argparse import Namespace
+from functools import partial
+from pathlib import Path
+
+import os
+import re
+#+end_src
+*** PyPi
+
+I'll keep the =fast.ai= imports separate to maybe make it easier to reference what comes from where.
+
+#+begin_src python :results none
+from fastai.datasets import untar_data, URLs
+from fastai.metrics import accuracy, error_rate
+from fastai.train import ClassificationInterpretation
+from fastai.vision.data import (
+    get_image_files, 
+    imagenet_stats, 
+    ImageDataBunch)
+from fastai.vision.learner import cnn_learner
+from fastai.vision.models import resnet18, resnet34, resnet50
+from fastai.vision.transform import get_transforms
+#+end_src
+
+And the rest... 
+#+begin_src python :results none
+from dotenv import load_dotenv
+from ipyexperiments import IPyExperimentsPytorch
+from tabulate import tabulate
+import holoviews
+import matplotlib.pyplot as pyplot
+import numpy
+import pandas
+import seaborn
+import torch
+#+end_src
+*** My Stuff
+    This is just some convenience stuff wrapped around other people's code (my lite-version of opinionated code).
+#+begin_src python :results none
+from graeae.tables import CountPercentage
+from graeae.timers import Timer
+from graeae.visualization import EmbedHoloview
+#+end_src
+** Setup
+*** Some Constants
+    There's a lot of values scattered all over the place and I just wanted one place to keep track of them and maybe change them if needed.
+#+begin_src python :results none
+Net = Namespace(
+    random_seed=2,
+    batch_size=64,
+    low_memory_batch_size=16,
+)
+#+end_src
+*** The Random Seed
+    To make this reproducible I'll set the random seed in numpy.
+#+begin_src python :results none
+numpy.random.seed(Net.random_seed)
+#+end_src
+*** The Path
+    This loads the path where I put the image data-set.
+#+begin_src python :results none
+load_dotenv(".env", override=True)
+DATA_PATH = Path(os.environ.get("OXFORD_PET_DATASET")).expanduser()
+#+end_src
+*** Plotting
+    Although I'd prefer to plot things in HoloViews/bokeh, some of their stuff is too tightly bundled to make it easy (and the image plots maybe don't need to be interactive) so this sets up some formatting for the matplotlib plots.
+**** Matplotlib
+#+BEGIN_SRC python :results none
+get_ipython().run_line_magic('matplotlib', 'inline')
+get_ipython().run_line_magic('config', "InlineBackend.figure_format = 'retina'")
+seaborn.set(style="whitegrid",
+            rc={"axes.grid": False,
+                "font.family": ["sans-serif"],
+                "font.sans-serif": ["Open Sans", "Latin Modern Sans", "Lato"],
+                "figure.figsize": (8, 6)},
+            font_scale=1)
+#+END_SRC
+
+**** The Bokeh
+     This sets up some stuff for the javascript-based plotting.
+#+BEGIN_SRC python :results none
+holoviews.extension("bokeh")
+SLUG = "dog-breed-classification"
+OUTPUT_FOLDER = Path("../../files/posts/fastai/")/SLUG
+Embed = partial(EmbedHoloview, folder_path=OUTPUT_FOLDER)
+#+END_SRC
+
+This is where I'm going to put the settings for the javascript-based plotting.
+#+BEGIN_SRC python :results none
+Plot = Namespace(
+    width = 1000,
+    height = 800,
+)
+#+END_SRC
+*** The Timer
+    This times how long things take so I can estimate how long it will take if I re-run cells. It also speaks a message so I can do something else and will know that the code is done running without having to watch the messages.
+
+#+BEGIN_SRC python :results none
+TIMER = Timer()
+#+END_SRC
+*** Tabulate
+    This is to format tables in the org-mode format (since I'm running this in emacs org-babel).
+#+BEGIN_SRC python :results none
+ORG_TABLE = partial(tabulate, headers="keys", 
+                    showindex=False, 
+                    tablefmt="orgtbl")
+#+END_SRC
+* Middle
+** Downloading the Data
+
+As I mentioned before, the data will be the [[http://www.robots.ox.ac.uk/~vgg/data/pets/][Oxford-IIIT Pet Dataset]] by [[http://www.robots.ox.ac.uk/~vgg/publications/2012/parkhi12a/parkhi12a.pdf][O. M. Parkhi et al., 2012]]. In the dataset there are twelve breeds of cat and twenty-five breeds of dog. When the researchers performed their experiments in 2012 the best accuracy they got was 59.21 %.
+
+The original lesson uses the [[https://docs.fast.ai/datasets.html#untar_data][untar_data]] function to download the data-set.
+
+#+begin_src python :results output :exports both
+help(untar_data)
+#+end_src
+
+#+RESULTS:
+: Help on function untar_data in module fastai.datasets:
+: 
+: untar_data(url: str, fname: Union[pathlib.Path, str] = None, dest: Union[pathlib.Path, str] = None, data=True, force_download=False, verbose=False) -> pathlib.Path
+:     Download `url` to `fname` if `dest` doesn't exist, and un-tgz to folder `dest`.
+: 
+
+But, see the next section for why I don't use it.
+
+#+begin_src python :results none
+# path = untar_data(URLs.PETS)
+# print(path)
+#+end_src
+
+This data set is 774 Megabytes and given my over-priced yet still incredibly slow CenturyLink speeds I found downloading it directly from the [[https://course.fast.ai/datasets#image-classification][fastai datasets page]] a little more satisfactory, since the progress widget that runs during the download when =untar_data= downloads the dataset doesn't show up in emacs so it just looks like it's hung up.
+
+#+begin_src python :results output :exports both
+assert DATA_PATH.is_dir()
+print(DATA_PATH.name)
+#+end_src
+
+#+RESULTS:
+: oxford-iiit-pet
+
+Now let's see what's in the folder.
+
+#+begin_src python :results output raw :exports both
+for path in DATA_PATH.iterdir():
+    print(f" - {path.name}")
+#+end_src
+
+#+RESULTS:
+:  - README.org
+:  - images
+:  - annotations
+
+For convenience we can set up two paths - one for the images and one for the annotations (the labels).
+#+begin_src python :results none
+PATH = Namespace(
+    to_annotations = DATA_PATH/'annotations',
+    to_images = DATA_PATH/'images',
+)
+#+end_src
+** Looking At the Data
+*** Getting the Labels
+   Here's where we peek at our data set. The dataset is set up so that the breeds are used in the names of the image files. =fast.ai= has a convenient classmethod named [[https://docs.fast.ai/vision.data.html#ImageDataBunch.from_name_re][ImageDataBunch.from_name_re]] that will extract the labels from the filenames using a [[https://docs.python.org/3.6/library/re.html][regular expression]].
+
+Before we get to that, though, we can take a look at some file names using [[https://docs.fast.ai/vision.data.html#get_image_files][get_image_files]].
+
+#+begin_src python :results output raw :exports both
+file_names = get_image_files(PATH.to_images)
+for path in file_names[:5]:
+    print(f" - {path.name}")
+#+end_src
+
+#+RESULTS:
+:  - havanese_128.jpg
+:  - american_bulldog_181.jpg
+:  - Ragdoll_196.jpg
+:  - havanese_40.jpg
+:  - Birman_108.jpg
+
+One thing to notice about the names is that the case for the names is important - the names that start with a capital letter represents cats and the names with only lower-case names are dogs.
+
+It also says that the format for the names is <class>_<ID>, where the class is the breed and the ID is a numeric index (each breed has more than one file representing it, so you need this keeps them separated). Besides the naming convention, there is a file named =list.txt= with the species (cat or dog) and a numeric identifier for the breed for each image.
+
+Now I'll construct the pattern to match the file-name.
+
+#+begin_src python :results none
+UNDERSCORE = "_"
+is_not_a = "^"
+end_of_line = "$"
+one_or_more = "+"
+digit = r"\d"
+forward_slash = "/"
+character_class = "[{}]"
+group = "({})"
+
+anything_but_a_slash = character_class.format(f"{is_not_a}{forward_slash}")
+
+index = rf"{digit}{one_or_more}"
+label = group.format(f'{anything_but_a_slash}{one_or_more}')
+file_extension = ".jpg"
+
+expression = rf'{forward_slash}{label}{UNDERSCORE}{index}{file_extension}{end_of_line}'
+test = "/home/tester/data/datasets/images/oxford-iiit-pet/images/saint_bernard_195.jpg"
+assert re.search(expression, test).groups()[0] == "saint_bernard"
+
+test = "/home/tester/data/datasets/images/oxford-iiit-pet/images/Ragdoll_196.jpg"
+#+end_src
+
+The reason for the forward slash at the beginning of the expression is that we're passing in the entire path to each image, not just the name of the image.
+
+Now on to the =ImageDataBunch=. Here's the arguments we need to pass in.
+
+#+begin_src python :results output :exports both
+print(help(ImageDataBunch.from_name_re))
+#+end_src
+
+#+RESULTS:
+: Help on method from_name_re in module fastai.vision.data:
+: 
+: from_name_re(path: Union[pathlib.Path, str], fnames: Collection[pathlib.Path], pat: str, valid_pct: float = 0.2, **kwargs) method of builtins.type instance
+:     Create from list of `fnames` in `path` with re expression `pat`.
+: 
+: None
+
+Here's the arguments that we'll pass in.
+
+| Argument  | Description                                                     |
+|-----------+-----------------------------------------------------------------|
+| =path=    | The path to the folder for temporary files                      |
+| =fnames=  | A list of file names                                            |
+| =pat=     | Regular expression to extract the labels from the names         |
+| =ds_tfms= | A tuple of data transformation functions to apply to the images |
+| =size=    | Argument to the data transform (augmentation) functions         |
+| =bs=      | The batch size                                                  |
+
+Okay, so let's get the labels.
+
+#+begin_src python :results none
+data = ImageDataBunch.from_name_re(PATH.to_images, 
+                                   file_names, 
+                                   expression, 
+                                   ds_tfms=get_transforms(), 
+                                   size=224, 
+                                   bs=Net.batch_size
+                                  ).normalize(imagenet_stats)
+#+end_src
+
+One of the arguments we passed in (=ds_tfms=) isn't particularly obviously named, unless you already know about applying transforms to images, but here's what we passed to it.
+
+#+begin_src python :results output :exports both
+print(help(get_transforms))
+#+end_src
+
+#+RESULTS:
+: Help on function get_transforms in module fastai.vision.transform:
+: 
+: get_transforms(do_flip: bool = True, flip_vert: bool = False, max_rotate: float = 10.0, max_zoom: float = 1.1, max_lighting: float = 0.2, max_warp: float = 0.2, p_affine: float = 0.75, p_lighting: float = 0.75, xtra_tfms: Union[Collection[fastai.vision.image.Transform], NoneType] = None) -> Collection[fastai.vision.image.Transform]
+:     Utility func to easily create a list of flip, rotate, `zoom`, warp, lighting transforms.
+: 
+: None
+
+[[https://docs.fast.ai/vision.transform.html#get_transforms][get_transforms]] adds random changes to the images to augment the datasets for our training.
+
+We also added a call to [[https://docs.fast.ai/vision.data.html#normalize][normalize]] which sets the mean and standard deviation of the images to match those of the images used to train the model that we're going to use ([[https://arxiv.org/abs/1512.03385][ResNet]]).
+
+*** Looking at Some of the Images
+The [[https://docs.fast.ai/basic_data.html#DataBunch.show_batch][show_batch]] method will plot some of the images in matplotlib. It retrieves them randomly so calling the method repeatedly will pull up different images. Unfortunately you can't pass in a figure or axes so it isn't easily configurable.
+
+#+begin_src python :results output :exports both
+help(data.show_batch)
+#+end_src
+
+#+RESULTS:
+: Help on method show_batch in module fastai.basic_data:
+: 
+: show_batch(rows: int = 5, ds_type: fastai.basic_data.DatasetType = <DatasetType.Train: 1>, reverse: bool = False, **kwargs) -> None method of fastai.vision.data.ImageDataBunch instance
+:     Show a batch of data in `ds_type` on a few `rows`.
+: 
+
+Now I'll call it to get the batch.
+
+#+begin_src python :results raw drawer :file ../../files/posts/fastai/dog-breed-classification/show_batch.png
+data.show_batch(rows=3, figsize=(7,6))
+#+end_src
+
+[[file:show_batch.png]]
+
+
+I'm guessing that the reason why so many images look "off" is because the of the data-transforms being added, and not that the photographers were horrible (or drunk). Why don't we look at the representation of the data bunch?
+
+#+begin_src python :results output :exports both
+print(data)
+#+end_src
+
+#+RESULTS:
+#+begin_example
+ImageDataBunch;
+
+Train: LabelList (5912 items)
+x: ImageList
+Image (3, 224, 224),Image (3, 224, 224),Image (3, 224, 224),Image (3, 224, 224),Image (3, 224, 224)
+y: CategoryList
+havanese,american_bulldog,Ragdoll,Egyptian_Mau,english_cocker_spaniel
+Path: /home/athena/data/datasets/images/oxford-iiit-pet/images;
+
+Valid: LabelList (1478 items)
+x: ImageList
+Image (3, 224, 224),Image (3, 224, 224),Image (3, 224, 224),Image (3, 224, 224),Image (3, 224, 224)
+y: CategoryList
+miniature_pinscher,english_cocker_spaniel,chihuahua,japanese_chin,Abyssinian
+Path: /home/athena/data/datasets/images/oxford-iiit-pet/images;
+#+end_example
+
+So it looks like the =ImageDataBunch= created a training and a validation set and based on the shapes, each of the images has three channels and is 224 x 224 pixels. Also note that although it only displays five labels (y) it actually has more.
+
+#+begin_src python :results output :exports both
+print(len(set(data.label_list.y)))
+#+end_src
+
+#+RESULTS:
+: 37
+
+** Training: resnet34
+
+ Here's where we train the model - a [[http://cs231n.github.io/convolutional-networks/][convolutional neural network]] in the back with a fully-connected network at the end.
+
+I'll use =fast.ai's= [[https://docs.fast.ai/vision.learner.html#cnn_learner][cnn_learner]] to load the data, pre-trained model (=resnet34=), and  metric to use when training ([[https://docs.fast.ai/metrics.html#error_rate][error_rate]]). If you look at the [[https://github.com/fastai/fastai/blob/master/fastai/vision/models/__init__.py][fast ai code]] they are importing the =resnet34= model from [[https://pytorch.org/docs/stable/torchvision/models.html#id3][pytorch's torchvision]].
+
+This next block sets up the [[https://github.com/stas00/ipyexperiments/blob/master/docs/ipyexperiments.md][IPyExperiments]] which will delete all the variables that were created after it was created when it is deleted. This is to free up memory because the =resnet= architecture takes up a lot of memory on the GPU.
+
+#+begin_src python :results output :exports both
+experiment = IPyExperimentsPytorch()
+#+end_src
+
+#+RESULTS:
+#+begin_example
+
+,*** Experiment started with the Pytorch backend
+Device: ID 0, GeForce GTX 1060 6GB (6069 RAM)
+
+
+,*** Current state:
+RAM:    Used    Free   Total       Util
+CPU:   1,896  56,692  64,239 MB   2.95% 
+GPU:   1,291   4,778   6,069 MB  21.28% 
+
+
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.125
+･ CPU:          0          0      1,896 MB |
+･ GPU:          0          2      1,291 MB |
+
+IPyExperimentsPytorch: Finishing
+
+,*** Experiment finished in 00:00:23 (elapsed wallclock time)
+
+,*** Experiment memory:
+RAM: Consumed       Reclaimed
+CPU:        0        0 MB (  0.00%)
+GPU:        0        0 MB (100.00%)
+
+,*** Current state:
+RAM:    Used    Free   Total       Util
+CPU:   1,896  56,692  64,239 MB   2.95% 
+GPU:   1,291   4,778   6,069 MB  21.28% 
+
+
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.110
+･ CPU:          0          0      1,896 MB |
+･ GPU:          0          0      1,291 MB |
+#+end_example
+
+
+#+begin_src python :results output :exports both
+learn = cnn_learner(data, resnet34, metrics=error_rate)
+#+end_src
+
+#+RESULTS:
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.456
+: ･ CPU:          0          0      1,985 MB |
+: ･ GPU:        108          0      1,399 MB |
+
+#+begin_example
+Downloading: "https://download.pytorch.org/models/resnet34-333f7ec4.pth" to /home/athena/.torch/models/resnet34-333f7ec4.pth
+87306240it [00:26, 3321153.99it/s]
+#+end_example
+
+As you can see, it downloaded the stored model parameters from pytorch. This is because I've never downloaded this particular model before - if you run it again it shouldn't need to re-download it. Since this is a [[https://pytorch.org][pytorch]] model we can look at it's represetantion to see the architecture of the network.
+
+#+begin_src python :results output :exports both
+print(learn.model)
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Sequential(
+  (0): Sequential(
+    (0): Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+    (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (2): ReLU(inplace=True)
+    (3): MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+    (4): Sequential(
+      (0): BasicBlock(
+        (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (1): BasicBlock(
+        (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (2): BasicBlock(
+        (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (5): Sequential(
+      (0): BasicBlock(
+        (conv1): Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (downsample): Sequential(
+          (0): Conv2d(64, 128, kernel_size=(1, 1), stride=(2, 2), bias=False)
+          (1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+      )
+      (1): BasicBlock(
+        (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (2): BasicBlock(
+        (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (3): BasicBlock(
+        (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (6): Sequential(
+      (0): BasicBlock(
+        (conv1): Conv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (downsample): Sequential(
+          (0): Conv2d(128, 256, kernel_size=(1, 1), stride=(2, 2), bias=False)
+          (1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+      )
+      (1): BasicBlock(
+        (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (2): BasicBlock(
+        (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (3): BasicBlock(
+        (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (4): BasicBlock(
+        (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (5): BasicBlock(
+        (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (7): Sequential(
+      (0): BasicBlock(
+        (conv1): Conv2d(256, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (downsample): Sequential(
+          (0): Conv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), bias=False)
+          (1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+      )
+      (1): BasicBlock(
+        (conv1): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (2): BasicBlock(
+        (conv1): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+  )
+  (1): Sequential(
+    (0): AdaptiveConcatPool2d(
+      (ap): AdaptiveAvgPool2d(output_size=1)
+      (mp): AdaptiveMaxPool2d(output_size=1)
+    )
+    (1): Flatten()
+    (2): BatchNorm1d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (3): Dropout(p=0.25, inplace=False)
+    (4): Linear(in_features=1024, out_features=512, bias=True)
+    (5): ReLU(inplace=True)
+    (6): BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (7): Dropout(p=0.5, inplace=False)
+    (8): Linear(in_features=512, out_features=37, bias=True)
+  )
+)
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.002
+･ CPU:          0          0      1,985 MB |
+･ GPU:          0          0      1,399 MB |
+#+end_example
+
+That's a pretty big network, but the main thing to notice is the last layer, which has 37 =out_features= which corresponds to the number of breeds we have in our data-set. If you were working directly with pytorch you'd have to remove the last layer and add it back yourself, but =fast.ai= has done this for us.
+
+Now we need to train it using the [[https://docs.fast.ai/train.html#fit_one_cycle][fit_one_cycle]] method. At first I thought 'one cycle' meant just one pass through the batches but according to the [[https://docs.fast.ai/callbacks.one_cycle.html][documentation]], this is a reference to a training method called the [[https://sgugger.github.io/the-1cycle-policy.html][1Cycle Policy]] proposed by [[https://arxiv.org/abs/1803.09820][Leslie N. Smith]] that changes the hyperparameters to make the model train faster.
+
+
+** Unfreezing, fine-tuning, and learning rates
+
+So, this is what we get with a straight off-the-shelf setup from =fast.ai=, but we want more, don't we? Let's [[https://docs.fast.ai/basic_train.html#Learner.unfreeze][*unfreeze*]] the model (allow the entire model's weights to be trained) and train some more.
+
+#+BEGIN_SRC python :results none
+learn.unfreeze()
+#+END_SRC
+
+Since we are using a pre-trained model we normally freeze all but the last layer to do transfer learning, by unfreezing the model we'll train all the layers to our dataset.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Finished training the unfrozen model."
+with TIMER:
+    learn.fit_one_cycle(1)
+#+END_SRC
+
+#+RESULTS:
+: Started: 2019-04-21 18:29:47.149628
+: Ended: 2019-04-21 18:30:28.689325
+: Elapsed: 0:00:41.539697
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:41.541
+: ･ CPU:          0          0      3,010 MB |
+: ･ GPU:        694      1,923      1,883 MB |
+
+Now we save the parameters to disk again.
+
+#+BEGIN_SRC python :results none
+learn.save('stage-1');
+#+END_SRC
+
+Now we're going to use the [[https://docs.fast.ai/callbacks.lr_finder.html][lr_find]] method to find the best learning rate.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Finished finding the best learning rate."
+with TIMER:
+    learn.lr_find()
+#+END_SRC
+
+#+RESULTS:
+: Started: 2019-04-21 18:31:02.961941
+: LR Finder is complete, type {learner_name}.recorder.plot() to see the graph.
+: Ended: 2019-04-21 18:31:29.892324
+: Elapsed: 0:00:26.930383
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:26.931
+: ･ CPU:          0          0      3,010 MB |
+: ･ GPU:        339      1,646      2,218 MB |
+
+#+begin_src python :results raw drawer :ipyfile ../../files/posts/fastai/dog-and-cat-breed-classification/learning.png
+learn.recorder.plot()
+#+END_SRC
+
+#+RESULTS:
+:results:
+# Out[43]:
+[[file:../../files/posts/fastai/dog-and-cat-breed-classification/learning.png]]
+:end:
+
+[[file:learning.png]]
+
+
+So, it's kind of hard to see the exact number, but you can see that somewhere around a learning rate of 0.0001 we get a good loss and then after that the loss starts to go way up.
+
+So next we're going to re-train it using an interval that hopefully gives us the best loss.
+
+#+begin_src python :results output :exports both
+learn.unfreeze()
+with TIMER:
+    print(learn.fit_one_cycle(2, max_lr=slice(1e-6,1e-4)))
+#+END_SRC
+
+#+RESULTS:
+: Started: 2019-04-21 18:34:11.748741
+: None
+: Ended: 2019-04-21 18:35:34.827655
+: Elapsed: 0:01:23.078914
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:01:23.083
+: ･ CPU:          0          0      3,011 MB |
+: ･ GPU:          9      1,634      2,231 MB |
+
+Now the experiment is over so let's free up some memory.
+
+#+begin_src python :results output raw :exports both
+del experiment
+#+end_src
+
+#+RESULTS:
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
+･ CPU:          0          0      3,011 MB |
+･ GPU:        -17          0      2,214 MB |
+
+IPyExperimentsPytorch: Finishing
+
+*** Experiment finished in 00:20:22 (elapsed wallclock time)
+
+*** Newly defined local variables:
+Deleted: bins, codecs, indexes, interpreter, learn, losses, percentage, total
+
+*** Circular ref objects gc collected during the experiment:
+cleared 12 objects (only temporary leakage)
+
+*** Experiment memory:
+RAM: Consumed       Reclaimed
+CPU:      636        0 MB (  0.00%)
+GPU:    1,297    1,308 MB (100.82%)
+
+*** Current state:
+RAM:    Used    Free   Total       Util
+CPU:   3,011  57,984  64,336 MB   4.68% 
+GPU:     906   5,163   6,069 MB  14.93% 
+
+** Training: resnet50
+
+Okay, so we trained the =resnet34= model, and although I haven't figured out how to tell exactly how well it's doing, it seems to be doing pretty well. Now it's time to try the =resnet50= model, which has pretty much the same architecture but more layers. This means it should do better, but it also takes up a lot more memory.
+
+
+Even after deleting the old model I still run out of memory so I'm going to have to fall back to a smaller batch-size. 
+
+#+begin_src python :results output :exports both
+experiment = IPyExperimentsPytorch()
+#+end_src
+
+#+RESULTS:
+#+begin_example
+
+,*** Experiment started with the Pytorch backend
+Device: ID 0, GeForce GTX 1060 6GB (6069 RAM)
+
+
+,*** Current state:
+RAM:    Used    Free   Total       Util
+CPU:   3,011  57,984  64,336 MB   4.68% 
+GPU:     906   5,163   6,069 MB  14.93% 
+
+
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
+･ CPU:          0          0      3,011 MB |
+･ GPU:          0          0        906 MB |
+#+end_example
+
+#+begin_src python :results none
+data = ImageDataBunch.from_name_re(
+    path_to_images, 
+    file_names, 
+    expression, 
+    ds_tfms=get_transforms(),
+    size=299, 
+    bs=Net.low_memory_batch_size).normalize(imagenet_stats)
+#+end_src
+
+Now I'll re-build the learner with the new pre-trained model.
+#+begin_src python :results none
+learn = cnn_learner(data, resnet50, metrics=error_rate)
+#+end_src
+
+#+begin_src python :results raw drawer :ipyfile ../../files/posts/fastai/dog-and-cat-breed-classification/learning_50.png
+learn.lr_find()
+learn.recorder.plot()
+#+end_src
+
+#+RESULTS:
+:results:
+# Out[50]:
+[[file:../../files/posts/fastai/dog-and-cat-breed-classification/learning_50.png]]
+:end:
+
+[[file:learning_50.png]]
+
+So with this learner we can see that there's a rapid drop in loss followed by a sudden spike in loss.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Done fitting resnet 50"
+with TIMER:
+    learn.fit_one_cycle(8)
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 18:42:03.987300
+: Ended: 2019-04-21 18:57:43.628598
+: Elapsed: 0:15:39.641298
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:15:39.643
+: ･ CPU:          0          0      3,067 MB |
+: ･ GPU:         17      4,474      1,117 MB |
+
+Okay, so save the parameters again.
+
+#+begin_src python :results none
+learn.save('stage-1-50')
+#+end_src
+
+Now we can try and unfreeze and re-train it.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Finished training resnet 50 with the optimal learning rate."
+learn.unfreeze()
+with TIMER:
+    learn.fit_one_cycle(3, max_lr=slice(1e-6,1e-4))
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 18:58:22.070603
+: Ended: 2019-04-21 19:06:24.471347
+: Elapsed: 0:08:02.400744
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:08:02.406
+: ･ CPU:          0          0      3,069 MB |
+: ･ GPU:        259      4,586      1,376 MB |
+
+#+begin_src python :results output :exports both
+with TIMER:
+    metrics = learn.validate()
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 19:08:37.971400
+: Ended: 2019-04-21 19:08:49.648814
+: Elapsed: 0:00:11.677414
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:11.679
+: ･ CPU:          0          0      3,069 MB |
+: ･ GPU:         22        410      1,398 MB |
+
+#+begin_src python :results output :exports both
+print(f"Error Rate: {metrics[0]:.2f}")
+#+end_src
+
+#+RESULTS:
+: Error Rate: 0.15
+
+Since it didn't improve let's go back to the previous model.
+
+#+begin_src python :results output :exports both
+learn.load('stage-1-50');
+with TIMER:
+    metrics = learn.validate()
+print(f"Error Rate: {metrics[0]:.2f}")
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 19:09:19.655769
+: Ended: 2019-04-21 19:09:30.841289
+: Elapsed: 0:00:11.185520
+: Error Rate: 0.16
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:16.011
+: ･ CPU:          1          1      3,069 MB |
+: ･ GPU:        308        612      1,706 MB |
+
+*** Interpreting the Result
+#+begin_src python :results output :exports both
+interpreter = ClassificationInterpretation.from_learner(learn)
+#+end_src
+**** The Most Confusing Breeds
+
+#+begin_src python :results output raw :exports both
+print(ORG_TABLE(interpreter.most_confused(min_val=3),
+                headers="Actual Predicted Count".split()))
+#+end_src
+
+#+RESULTS:
+| Actual                     | Predicted                  | Count |
+|----------------------------+----------------------------+-------|
+| American_Pit_Bull_Terrier  | Staffordshire_Bull_Terrier |     6 |
+| Bengal                     | Egyptian_Mau               |     5 |
+| Ragdoll                    | Birman                     |     5 |
+| Staffordshire_Bull_Terrier | American_Pit_Bull_Terrier  |     5 |
+| Bengal                     | Abyssinian                 |     3 |
+
+It got fewer breeds with more than two wrong than the =resnet34= model did, but both of them seem to have trouble telling an American Pit Bull Terrier from a Staffordshire Bull Terrier.
+
+#+begin_src python :results output :exports both
+del experiment
+#+end_src
+
+#+RESULTS:
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
+: ･ CPU:          0          0      3,070 MB |
+: ･ GPU:          0          0      1,706 MB |
+
+** Other Data Formats
+   This is a look at other data sets.
+* Return
+  This last bit just let's me run the whole notebook and get a message when it's over.
+#+BEGIN_SRC python :results output :exports both
+TIMER.message = "The Dog and cat breed classification buffer is done. Come check it out."
+with TIMER:
+    pass
+#+END_SRC
+
+#+RESULTS:
+: Started: 2019-04-21 10:43:46.858157
+: Ended: 2019-04-21 10:43:46.858197
+: Elapsed: 0:00:00.000040
