@@ -7,13 +7,13 @@
 .. link: 
 .. description: Classifying images of dogs and cats by breed.
 .. type: text
-.. updated: 2020-05-03 16:14:46 UTC-07:00
+.. updated: 2020-05-06 16:14:46 UTC-07:00
 #+END_COMMENT
 #+OPTIONS: ^:{}
 #+OPTIONS: H:5
 #+TOC: headlines 2
-#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-e9eb0f6e-5f68-4678-8c81-e17380d39f97-ssh.json
-#+BEGIN_SRC python :results none
+#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-ae33a6cd-f607-450e-a03b-01abe2a3b232-ssh.json
+#+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
 #+END_SRC
@@ -186,9 +186,6 @@ for path in DATA_PATH.iterdir():
 :  - images
 :  - annotations
 :  - README.org
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.001
-: ･ CPU:          0          0      2,332 MB |
-: ･ GPU:          0          0        663 MB |
 
 For convenience we can set up two paths - one for the images and one for the annotations (the labels).
 #+begin_src python :results none
@@ -215,9 +212,6 @@ for path in file_names[:5]:
 :  - Sphynx_40.jpg
 :  - boxer_12.jpg
 :  - Russian_Blue_232.jpg
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.144
-: ･ CPU:          1          0      2,332 MB |
-: ･ GPU:          0          0        663 MB |
 
 One thing to notice about the names is that the case for the names is important - the names that start with a capital letter represents cats and the names with only lower-case names are dogs.
 
@@ -356,7 +350,7 @@ data.show_batch(rows=3, figsize=(7,6))
 [[file:show_batch.png]]
 
 
-I'm guessing that the reason why so many images look "off" is because the of the data-transforms being added, and not that the photographers were horrible (or drunk). Why don't we look at the representation of the data bunch?
+I'm guessing that the reason why so many images look "off" is because the of the data-transforms being added, and not that the photographers were horrible (or drunk). Looking at the names you can see that the convention for identifying species holds - the cats have capitalized breed names while the dogs have lower-cased breed names. Why don't we look at the representation of the data bunch?
 
 #+begin_src python :results output :exports both
 print(data)
@@ -381,11 +375,6 @@ Abyssinian,Bombay,great_pyrenees,english_cocker_spaniel,english_setter
 Path: /home/hades/data/datasets/images/oxford-iiit-pet/images;
 
 Test: None
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.182
-･ CPU:          0          3      2,332 MB |
-･ GPU:          0          0        663 MB |
-/home/hades/.virtualenvs/In-Too-Deep/lib/python3.8/site-packages/torch/nn/functional.py:2854: UserWarning: The default behavior for interpolate/upsample with float scale_factor will change in 1.6.0 to align with other frameworks/libraries, and use scale_factor directly, instead of relying on the computed output size. If you wish to keep the old behavior, please set recompute_scale_factor=True. See the documentation of nn.Upsample for details. 
-  warnings.warn("The default behavior for interpolate/upsample with float scale_factor will change "
 #+end_example
 
 So it looks like the =ImageDataBunch= created a training and a validation set and based on the shapes, each of the images has three channels and is 224 x 224 pixels. Also note that although it only displays five labels (y) it actually has more.
@@ -418,47 +407,28 @@ experiment = IPyExperimentsPytorch()
 ,*** Experiment started with the Pytorch backend
 Device: ID 0, GeForce GTX 1070 Ti (8118 RAM)
 
-
 ,*** Current state:
 RAM:    Used    Free   Total       Util
-CPU:   2,332  29,014  32,099 MB   7.27% 
-GPU:     663   7,454   8,118 MB   8.17% 
+CPU:   1,900  29,446  32,099 MB   5.92% 
+GPU:     519   7,598   8,118 MB   6.40% 
 
 
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.179
-･ CPU:          0          0      2,332 MB |
-･ GPU:          0          0        663 MB |
-
-IPyExperimentsPytorch: Finishing
-
-,*** Experiment finished in 00:25:15 (elapsed wallclock time)
-
-,*** Experiment memory:
-RAM: Consumed       Reclaimed
-CPU:      -33        0 MB ( -0.00%)
-GPU:        0        0 MB (100.00%)
-
-,*** Current state:
-RAM:    Used    Free   Total       Util
-CPU:   2,332  29,014  32,099 MB   7.27% 
-GPU:     663   7,454   8,118 MB   8.17% 
-
-
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.176
-･ CPU:          0          0      2,332 MB |
-･ GPU:          0          0        663 MB |
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
+･ CPU:          0          0      1,900 MB |
+･ GPU:          0          0        519 MB |
 #+end_example
 
+
+Now we can create our learner (model).
 
 #+begin_src python :results output :exports both
 learn = cnn_learner(data, resnet34, metrics=error_rate)
 #+end_src
 
 #+RESULTS:
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:01.085
-: ･ CPU:          0          0      2,417 MB |
-: ･ GPU:         86          0        749 MB |
-
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:01.110
+: ･ CPU:          0          0      2,032 MB |
+: ･ GPU:         44         42        671 MB |
 #+begin_example
 Downloading: "https://download.pytorch.org/models/resnet34-333f7ec4.pth" to /home/athena/.torch/models/resnet34-333f7ec4.pth
 87306240it [00:26, 3321153.99it/s]
@@ -626,9 +596,9 @@ Sequential(
     (8): Linear(in_features=512, out_features=37, bias=True)
   )
 )
-･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.008
-･ CPU:          0          0      2,341 MB |
-･ GPU:          0          0        749 MB |
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.003
+･ CPU:          0          0      2,032 MB |
+･ GPU:          0          0        671 MB |
 #+end_example
 
 That's a pretty big network, but the main thing to notice is the last layer, which has 37 =out_features= which corresponds to the number of breeds we have in our data-set. If you were working directly with pytorch you'd have to remove the last layer and add it back yourself, but =fast.ai= has done this for us.
@@ -648,6 +618,12 @@ MODELS = Path(os.environ["MODELS"]).expanduser()/"fastai/dogs-and-cats"
 learn.save(MODELS/'stage-1')
 #+END_SRC
 
+#+RESULTS:
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.210
+: ･ CPU:          0          0      2,300 MB |
+: ･ GPU:          0          0        707 MB |
+
+** Results
    Let's look at how the model did. If I was running this in a jupyter notebook there would be a table output of the accuracy, but I'm not, and I can't find any documentation on how to get that myself, so, tough luck, then. We can look at some things after the fact, though - the [[https://docs.fast.ai/train.html#ClassificationInterpretation][ClassificationInterpretation]] class contains methods to help look at how the model did.
 
 #+BEGIN_SRC python :results none
@@ -664,13 +640,11 @@ assert len(data.valid_ds)==len(losses)==len(indexes)
 #+END_SRC
 
 #+RESULTS:
-: tensor([9.0430e+00, 7.5851e+00, 6.4739e+00,  ..., 4.7684e-07, 1.1921e-07,
-:         -0.0000e+00])
-: tensor([1057, 1100,  624,  ...,  848,  415,  980])
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.003
-: ･ CPU:          0          0      2,341 MB |
-: ･ GPU:          0          0        689 MB |
-
+: tensor([16.7646, 15.5110, 14.1369,  ...,  0.4656,  0.4188,  0.2532])
+: tensor([1182, 1029,  696,  ..., 1337,  449,  620])
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.004
+: ･ CPU:          0          0      2,520 MB |
+: ･ GPU:          0          0      3,663 MB |
 
 #+BEGIN_SRC python :results none
 plot = holoviews.Distribution(losses).opts(title="Loss Distribution", 
@@ -700,11 +674,11 @@ print(losses.min())
 #+END_SRC
 
 #+RESULTS:
-: tensor(9.0430)
+: tensor(7.2034)
 : tensor(-0.)
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.003
-: ･ CPU:          0          0      2,341 MB |
-: ･ GPU:          0          0        689 MB |
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.004
+: ･ CPU:          0          0      2,303 MB |
+: ･ GPU:          0          0        707 MB |
 
 Here's a count of the losses when they are broken up into ten bins.
 
@@ -787,20 +761,11 @@ Next let's look at the [[https://www.wikiwand.com/en/Confusion_matrix][confusion
 interpreter.plot_confusion_matrix(figsize=(12,12), dpi=60)
 #+END_SRC
 
-#+RESULTS:
-:RESULTS:
-#+attr_org: :width 712 :height 724
-[[file:../../files/posts/fastai/dog-breed-classification/confusion_matrix.png]]
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:07.730
-: ･ CPU:          0         43      2,342 MB |
-: ･ GPU:          0          0        689 MB |
-:END:
-
-[[file:confusion_matrix.png]]
+file:confusion_matrix.png]]
 
 One way to interpret this is to look at the x-axis (the actual breed) and sweep vertically up to see the counts for the y-axis (what our model predicted it was). The diagonal cells from the top left to the bottom right is where the predicted matched the actual. In this case, the fact that almost all the counts are in the diagonal means our model did pretty well at predicting the breeds in the images.
 
-If you compare the images with the worst losses to the confusion matrix you'll notice that they don't seem to correlate with the worst performances overall - the worst losses were one-offs. I should also note that when I ran the notebook previously the most confused were images that had a flare effect applied to them (presumably during the data augmentation step) but that isn't the case here. Perhaps improvements have been made upstream to the model... The most confused was the /Egyptian Mau/ being confused for a /Bengal/.
+If you compare the images with the worst losses to the confusion matrix you'll notice that they don't seem to correlate with the worst performances overall - the worst losses were one-offs, probably due to the flare effect. The most confused was the /Egyptian Mau/ being confused for a /Bengal/, with the /Ragdoll/ and /Birman/ also being relatively confused.
 
 Here's the breeds that were the hardest for the model to predict.
 
@@ -810,19 +775,313 @@ print(ORG_TABLE(interpreter.most_confused(min_val=3),
 #+END_SRC
 
 #+RESULTS:
-| Actual                    | Predicted                  |   Count |
-|---------------------------+----------------------------+---------|
-| Egyptian_Mau              | Bengal                     |       6 |
-| american_pit_bull_terrier | staffordshire_bull_terrier |       6 |
-| Birman                    | Ragdoll                    |       4 |
-| Ragdoll                   | Birman                     |       4 |
-| British_Shorthair         | Russian_Blue               |       3 |
-| Russian_Blue              | British_Shorthair          |       3 |
-| Siamese                   | Birman                     |       3 |
-| american_bulldog          | staffordshire_bull_terrier |       3 |
-| american_pit_bull_terrier | american_bulldog           |       3 |
-| american_pit_bull_terrier | miniature_pinscher         |       3 |
-| beagle                    | basset_hound               |       3 |
+| Actual                     | Predicted                  |   Count |
+|----------------------------+----------------------------+---------|
+| Egyptian_Mau               | Bengal                     |       9 |
+| Ragdoll                    | Birman                     |       7 |
+| Maine_Coon                 | Bengal                     |       4 |
+| Siamese                    | Birman                     |       4 |
+| staffordshire_bull_terrier | american_pit_bull_terrier  |       4 |
+| Maine_Coon                 | Persian                    |       3 |
+| american_bulldog           | staffordshire_bull_terrier |       3 |
+| american_pit_bull_terrier  | staffordshire_bull_terrier |       3 |
+| havanese                   | scottish_terrier           |       3 |
+
+It doesn't look too bad, actually, other that the first two entries, maybe. It's interesting that the first four incorrect predictions were all Bengals and Birmans.
+
+** Unfreezing, fine-tuning, and learning rates
+
+So, this is what we get with a straight off-the-shelf setup from =fast.ai=, but we want more, don't we? Let's [[https://docs.fast.ai/basic_train.html#Learner.unfreeze][*unfreeze*]] the model (allow the entire model's weights to be trained) and train some more.
+
+#+BEGIN_SRC python :results none
+learn.unfreeze()
+#+END_SRC
+
+Since we are using a pre-trained model we normally freeze all but the last layer to do transfer learning, by unfreezing the model we'll train all the layers to our dataset.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Finished training the unfrozen model."
+with TIMER:
+    learn.fit_one_cycle(1)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+: 2020-05-07 14:42:07,271 graeae.timers.timer start: Started: 2020-05-07 14:42:07.271311
+: INFO:graeae.timers.timer:Started: 2020-05-07 14:42:07.271311
+: 2020-05-07 14:42:42,026 graeae.timers.timer end: Ended: 2020-05-07 14:42:42.026700
+: INFO:graeae.timers.timer:Ended: 2020-05-07 14:42:42.026700
+: 2020-05-07 14:42:42,030 graeae.timers.timer end: Elapsed: 0:00:34.755389
+: INFO:graeae.timers.timer:Elapsed: 0:00:34.755389
+:END:
+
+Now we save the parameters to disk again.
+
+#+BEGIN_SRC python :results none
+learn.save(MODELS/'stage-2')
+#+END_SRC
+
+Now we're going to use the [[https://docs.fast.ai/callbacks.lr_finder.html][lr_find]] method to find the best learning rate.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Finished finding the best learning rate."
+with TIMER:
+    learn.lr_find()
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+: 2020-05-07 15:15:14,351 graeae.timers.timer start: Started: 2020-05-07 15:15:14.351093
+: INFO:graeae.timers.timer:Started: 2020-05-07 15:15:14.351093
+: 2020-05-07 15:15:38,642 graeae.timers.timer end: Ended: 2020-05-07 15:15:38.642878
+: INFO:graeae.timers.timer:Ended: 2020-05-07 15:15:38.642878
+: 2020-05-07 15:15:38,646 graeae.timers.timer end: Elapsed: 0:00:24.291785
+: INFO:graeae.timers.timer:Elapsed: 0:00:24.291785
+:END:
+
+#+begin_src python :results raw drawer :file ../../files/posts/fastai/dog-breed-classification/learning.png
+learn.recorder.plot()
+#+END_SRC
+
+#+RESULTS:
+
+[[file:learning.png]]
+
+
+So, it's kind of hard to see the exact number, but you can see that somewhere around a learning rate of 0.0001 we get a good loss and then after that the loss starts to go way up.
+
+So next we're going to re-train it using an interval that hopefully gives us the best loss.
+
+#+begin_src python :results output :exports both
+lowest = min(learn.recorder.losses)
+lowest_index = [index for index in range(len(learn.recorder.losses))
+                if learn.recorder.losses[index]==lowest][0]
+lowest_rate = learn.recorder.lrs[lowest_index]
+print(f"Lowest Loss Rate: {lowest_rate:0.3e}")
+#+end_src
+
+#+RESULTS:
+: Lowest Loss Rate: 1.445e-07
+
+Rather than just use the lowest rate we can pass in a range when we fit the model.
+
+#+begin_src python :results output :exports both
+learn.unfreeze()
+with TIMER:
+    print(learn.fit_one_cycle(2, max_lr=slice(lowest_rate, 1e-4)))
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+: 2020-05-07 16:16:48,354 graeae.timers.timer start: Started: 2020-05-07 16:16:48.354938
+: INFO:graeae.timers.timer:Started: 2020-05-07 16:16:48.354938
+: 2020-05-07 16:17:57,995 graeae.timers.timer end: Ended: 2020-05-07 16:17:57.995252
+: INFO:graeae.timers.timer:Ended: 2020-05-07 16:17:57.995252
+: 2020-05-07 16:17:57,998 graeae.timers.timer end: Elapsed: 0:01:09.640314
+: INFO:graeae.timers.timer:Elapsed: 0:01:09.640314
+None
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:01:13.408
+･ CPU:          0          0      2,318 MB |
+･ GPU:          0      2,210      1,437 MB |
+#+end_example
+:END:
+
+#+BEGIN_SRC python :results none
+interpreter = ClassificationInterpretation.from_learner(learn)
+#+END_SRC
+
+#+BEGIN_SRC python :results output :exports both
+losses, indexes = interpreter.top_losses()
+print(losses)
+print(indexes)
+assert len(data.valid_ds)==len(losses)==len(indexes)
+#+END_SRC
+
+#+RESULTS:
+: tensor([16.7646, 15.5110, 14.1369,  ...,  0.4656,  0.4188,  0.2532])
+: tensor([1182, 1029,  696,  ..., 1337,  449,  620])
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.003
+: ･ CPU:          0          0      2,520 MB |
+: ･ GPU:          0          0      3,663 MB |
+
+#+BEGIN_SRC python :results none
+plot = holoviews.Distribution(losses).opts(title="Loss Distribution", 
+                                           xlabel="Loss", 
+                                           width=Plot.width, 
+                                           height=Plot.height)
+output = Embed(plot=plot, file_name="loss_distribution_2")
+output()
+#+END_SRC
+
+#+BEGIN_SRC python :results html :exports both
+print(output.source)
+#+END_SRC
+
+#+RESULTS:
+#+begin_export html
+: <object type="text/html" data="loss_distribution_2.html" style="width:100%" height=800>
+:   <p>Figure Missing</p>
+: </object>
+#+end_export
+
+
+Now the experiment is over so let's free up some memory.
+
+#+begin_src python :results output raw :exports both
+del experiment
+#+end_src
+
+#+RESULTS:
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
+･ CPU:          0          0      3,011 MB |
+･ GPU:        -17          0      2,214 MB |
+
+IPyExperimentsPytorch: Finishing
+
+Experiment finished in 00:20:22 (elapsed wallclock time)
+Experiment memory:
+RAM: Consumed       Reclaimed
+CPU:      636        0 MB (  0.00%)
+GPU:    1,297    1,308 MB (100.82%)
+
+Current state:
+RAM:    Used    Free   Total       Util
+CPU:   3,011  57,984  64,336 MB   4.68% 
+GPU:     906   5,163   6,069 MB  14.93% 
+
+** Training: resnet50
+
+Okay, so we trained the =resnet34= model, and although I haven't figured out how to tell exactly how well it's doing, it seems to be doing pretty well. Now it's time to try the =resnet50= model, which has pretty much the same architecture but more layers. This means it should do better, but it also takes up a lot more memory.
+
+
+Even after deleting the old model I still run out of memory so I'm going to have to fall back to a smaller batch-size. 
+
+#+begin_src python :results output :exports both
+experiment = IPyExperimentsPytorch()
+#+end_src
+
+#+RESULTS:
+#+begin_example
+
+,*** Experiment started with the Pytorch backend
+Device: ID 0, GeForce GTX 1070 Ti (8118 RAM)
+
+
+,*** Current state:
+RAM:    Used    Free   Total       Util
+CPU:   2,318  29,059  32,099 MB   7.22% 
+GPU:   1,433   6,684   8,118 MB  17.66% 
+
+
+･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.000
+･ CPU:          0          0      2,318 MB |
+･ GPU:          0          0      1,433 MB |
+#+end_example
+
+#+begin_src python :results none
+data = ImageDataBunch.from_name_re(
+    PATH.to_images, 
+    file_names, 
+    expression, 
+    ds_tfms=get_transforms(),
+    size=299, 
+    bs=Net.low_memory_batch_size).normalize(imagenet_stats)
+#+end_src
+
+Now I'll re-build the learner with the new pre-trained model.
+#+begin_src python :results none
+learn = cnn_learner(data, resnet50, metrics=error_rate)
+#+end_src
+
+#+begin_src python :results raw drawer :file ../../files/posts/fastai/dog-breed-classification/learning_50.png
+learn.lr_find()
+learn.recorder.plot()
+#+end_src
+
+[[file:learning_50.png]]
+
+So with this learner we can see that there's a rapid drop in loss followed by a sudden spike in loss.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Done fitting resnet 50"
+with TIMER:
+    learn.fit_one_cycle(8)
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 18:42:03.987300
+: Ended: 2019-04-21 18:57:43.628598
+: Elapsed: 0:15:39.641298
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:15:39.643
+: ･ CPU:          0          0      3,067 MB |
+: ･ GPU:         17      4,474      1,117 MB |
+
+Okay, so save the parameters again.
+
+#+begin_src python :results none
+learn.save('stage-1-50')
+#+end_src
+
+Now we can try and unfreeze and re-train it.
+
+#+begin_src python :results output :exports both
+TIMER.message = "Finished training resnet 50 with the optimal learning rate."
+learn.unfreeze()
+with TIMER:
+    learn.fit_one_cycle(3, max_lr=slice(1e-6,1e-4))
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 18:58:22.070603
+: Ended: 2019-04-21 19:06:24.471347
+: Elapsed: 0:08:02.400744
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:08:02.406
+: ･ CPU:          0          0      3,069 MB |
+: ･ GPU:        259      4,586      1,376 MB |
+
+#+begin_src python :results output :exports both
+with TIMER:
+    metrics = learn.validate()
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 19:08:37.971400
+: Ended: 2019-04-21 19:08:49.648814
+: Elapsed: 0:00:11.677414
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:11.679
+: ･ CPU:          0          0      3,069 MB |
+: ･ GPU:         22        410      1,398 MB |
+
+#+begin_src python :results output :exports both
+print(f"Error Rate: {metrics[0]:.2f}")
+#+end_src
+
+#+RESULTS:
+: Error Rate: 0.15
+
+Since it didn't improve let's go back to the previous model.
+
+#+begin_src python :results output :exports both
+learn.load('stage-1-50');
+with TIMER:
+    metrics = learn.validate()
+print(f"Error Rate: {metrics[0]:.2f}")
+#+end_src
+
+#+RESULTS:
+: Started: 2019-04-21 19:09:19.655769
+: Ended: 2019-04-21 19:09:30.841289
+: Elapsed: 0:00:11.185520
+: Error Rate: 0.16
+: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:16.011
+: ･ CPU:          1          1      3,069 MB |
+: ･ GPU:        308        612      1,706 MB |
+
+*** Interpreting the Result
+#+begin_src python :results output :exports both
+interpreter = ClassificationInterpretation.from_learner(learn)
+#+end_src
+**** The Most Confusing Breeds
 
 It doesn't look too bad, actually, other that the first few entries, maybe. I should note here that sometimes when I train the model it ends up with different cases for most confused - it's generally the same suspects but in a different order (e.g. sometimes the American Pit Bull Terrier is confused for the Staffordshire Bull Terrier more than the other breeds are confused).
 
