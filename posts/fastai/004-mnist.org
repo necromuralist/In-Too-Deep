@@ -1,0 +1,14 @@
+#+BEGIN_COMMENT
+.. title: FastAI MNIST
+.. slug: fastai-mnist
+.. date: 2020-05-09 14:43:06 UTC-07:00
+.. tags: 
+.. category: 
+.. link: 
+.. description: 
+.. type: text
+
+#+END_COMMENT
+
+
+Write your post here.
