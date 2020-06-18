@@ -12,18 +12,20 @@
 #+OPTIONS: ^:{}
 #+OPTIONS: H:5
 #+TOC: headlines 2
-#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-ae33a6cd-f607-450e-a03b-01abe2a3b232-ssh.json
+#+PROPERTY: header-args :session /home/athena/.local/share/jupyter/runtime/kernel-9451173e-2c9e-4f5e-bf37-98607d33ef02-ssh.json
 #+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
 #+END_SRC
 * Beginning
-  This is lesson one from the [[https://www.fast.ai][fastai]] course [[https://course.fast.ai/index.html][Practical Deep Learning for Coders, v3]], which I assume is the third version of the course, and not a reference to a [[https://www.wikiwand.com/en/Kamen_Rider_V3][Japanese television show]]. It uses the [[http://www.fast.ai/2018/10/02/fastai-ai/][fastai V1 library]] which uses [[https://hackernoon.com/pytorch-1-0-468332ba5163][Pytorch 1.0]] but is an [[https://www.wikiwand.com/en/Convention_over_configuration][opinionated framework]] that bundles some sensible defaults so you don't have to spend as much time building the networks.
-
-Val the veterinarian has decided to set up a website to identify dog and cat breeds for people who upload a photo of their pet to his site. To do this he is going to train a neural network to identify the breeds of dogs and cats based on photos of them. It uses the [[http://www.robots.ox.ac.uk/~vgg/data/pets/][Oxford-IIT Pet Dataset]] which was created by researchers at Oxford University's [[http://www.robots.ox.ac.uk/~vgg/][Visual Geometry Group]].
-** Imports
+** Background
+  This is based on lesson one from the [[https://www.fast.ai][fastai]] course [[https://course.fast.ai/index.html][Practical Deep Learning for Coders, v3]]. It uses the [[http://www.fast.ai/2018/10/02/fastai-ai/][fastai V1 library]] which uses [[https://hackernoon.com/pytorch-1-0-468332ba5163][Pytorch 1.0]] but is an [[https://www.wikiwand.com/en/Convention_over_configuration][opinionated framework]] that bundles some sensible defaults so you don't have to spend as much time building the networks. It uses the [[http://www.robots.ox.ac.uk/~vgg/data/pets/][Oxford-IIT Pet Dataset]] which was created by researchers at Oxford University's [[http://www.robots.ox.ac.uk/~vgg/][Visual Geometry Group]].
+** Our Story
+   Cal sat in front of the computer screen, his eyes scanning incomprehendingly over the images. He had just been hired as a pet identifier for Petsinco, a seller of pets (slightly used). They would take in animals that people no longer wanted, clean them up, and resell them with a modest markup. Most of the time when they got a new animal it would have no paperwork or known history so they hired Cal to identify what kind of dogs and cats they took in.
+   Cal had no experience identifying animals beyond "Oh, yeah, that's a cat" but the hiring manager had liked the alliteration (Cal the Cat (and dog) Classifier) so he was hired anyway, and now he had folders full of pictures to classify by breed and he had no idea how to do it. Then it occured to him that he could use some of that Machine Learning he'd heard about to do it for him. Right.
+** Parts
 *** Python
-    Other than the [[https://docs.python.org/3.4/library/re.html][=re=]] none of the python imports were part of the original lesson. 
+
 #+begin_src python :results none
 from argparse import Namespace
 from functools import partial
@@ -63,7 +65,7 @@ import pandas
 import seaborn
 import torch
 #+end_src
-*** My Stuff
+*** Other Stuff
     This is just some convenience stuff wrapped around other people's code (my lite-version of opinionated code).
 #+begin_src python :results none
 from graeae.tables import CountPercentage
@@ -151,9 +153,6 @@ help(untar_data)
 : untar_data(url: str, fname: Union[pathlib.Path, str] = None, dest: Union[pathlib.Path, str] = None, data=True, force_download=False, verbose=False) -> pathlib.Path
 :     Download `url` to `fname` if `dest` doesn't exist, and un-tgz to folder `dest`.
 : 
-: ･ RAM:  △Consumed    △Peaked    Used Total | Exec time 0:00:00.001
-: ･ CPU:          0          0      2,332 MB |
-: ･ GPU:          0          0        663 MB |
 
 But, see the next section for why I don't use it.
 
