@@ -11,7 +11,7 @@
 #+END_COMMENT
 #+OPTIONS: ^:{}
 #+TOC: headlines 3
-#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-95fb7f72-2980-4eed-b335-9f9a6c7ffbd5-ssh.json
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-78523b64-fdf0-4457-a2d6-9aeada1f6ca2-ssh.json
 #+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
@@ -20,79 +20,66 @@
   In the {{% lancelot title="previous post" %}}neural-machine-translation-training-the-model{{% /lancelot %}} we trained our machine translation model so now it's time to test it and see how well it does.
 * End
   The overview post with links to all the posts in this series is {{% lancelot title="here" %}}neural-machine-translation{{% /lancelot %}}.
-* Raw
-#+begin_example python
-# # Part 4:  Testing
-# 
-# We will now be using the model you just trained to translate English sentences to German. We will implement this with two functions: The first allows you to identify the next symbol (i.e. output token). The second one takes care of combining the entire translated string.
-# 
-# We will start by first loading in a pre-trained copy of the model you just coded. Please run the cell below to do just that.
+** Imports
+#+begin_src python :results none
+# python
+from pathlib import Path
 
-# In[ ]:
+# pypi
+from trax import layers
 
+import numpy
 
-# instantiate the model we built in eval mode
+# this project
+from neurotic.nlp.machine_translation import NMTAttn
+#+end_src
+* Middle
+** The Model
+#+begin_src python :results none
+path = Path("~/models/machine_translation/model.pkl.gz").expanduser()
 model = NMTAttn(mode='eval')
+model.init_from_file(path, weights_only=True)
+model = layers.Accelerate(model)
+#+end_src
+** Decoding
 
-# initialize weights from a pre-trained model
-model.init_from_file("model.pkl.gz", weights_only=True)
-model = tl.Accelerate(model)
+There are several ways to get the next token when translating a sentence. For instance, we can just get the most probable token at each step (i.e. greedy decoding) or get a sample from a distribution. We can generalize the implementation of these two approaches by using the =tl.logsoftmax_sample()= method. Let's briefly look at its implementation:
 
+#+begin_example python
+ def logsoftmax_sample(log_probs, temperature=1.0):  # pylint: disable=invalid-name
+   """Returns a sample from a log-softmax output, with temperature.
+ 
+   Args:
+     log_probs: Logarithms of probabilities (often coming from LogSofmax)
+     temperature: For scaling before sampling (1.0 = default, 0.0 = pick argmax)
+   """
+   # This is equivalent to sampling from a softmax with temperature.
+   u = np.random.uniform(low=1e-6, high=1.0 - 1e-6, size=log_probs.shape)
+   g = -np.log(-np.log(u))
+   return np.argmax(log_probs + g * temperature, axis=-1)
+#+end_example
 
-# <a name="4.1"></a>
-# ## 4.1  Decoding
-# 
-# As discussed in the lectures, there are several ways to get the next token when translating a sentence. For instance, we can just get the most probable token at each step (i.e. greedy decoding) or get a sample from a distribution. We can generalize the implementation of these two approaches by using the `tl.logsoftmax_sample()` method. Let's briefly look at its implementation:
-# 
-# ```python
-# def logsoftmax_sample(log_probs, temperature=1.0):  # pylint: disable=invalid-name
-#   """Returns a sample from a log-softmax output, with temperature.
-# 
-#   Args:
-#     log_probs: Logarithms of probabilities (often coming from LogSofmax)
-#     temperature: For scaling before sampling (1.0 = default, 0.0 = pick argmax)
-#   """
-#   # This is equivalent to sampling from a softmax with temperature.
-#   u = np.random.uniform(low=1e-6, high=1.0 - 1e-6, size=log_probs.shape)
-#   g = -np.log(-np.log(u))
-#   return np.argmax(log_probs + g * temperature, axis=-1)
-# ```
-# 
-# The key things to take away here are: 1. it gets random samples with the same shape as your input (i.e. `log_probs`), and 2. the amount of "noise" added to the input by these random samples is scaled by a `temperature` setting. You'll notice that setting it to `0` will just make the return statement equal to getting the argmax of `log_probs`. This will come in handy later. 
-# 
-# <a name="ex06"></a>
-# ### Exercise 06
-# 
-# **Instructions:** Implement the `next_symbol()` function that takes in the `input_tokens` and the `cur_output_tokens`, then return the index of the next word. You can click below for hints in completing this exercise.
-# 
-# <details>    
-# <summary>
-#     <font size="3" color="darkgreen"><b>Click Here for Hints</b></font>
-# </summary>
-# <p>
-# <ul>
-#     <li>To get the next power of two, you can compute <i>2^log_2(token_length + 1)</i> . We add 1 to avoid <i>log(0).</i></li>
-#     <li>You can use <i>np.ceil()</i> to get the ceiling of a float.</li>
-#     <li><i>np.log2()</i> will get the logarithm base 2 of a value</li>
-#     <li><i>int()</i> will cast a value into an integer type</li>
-#     <li>From the model diagram in part 2, you know that it takes two inputs. You can feed these with this syntax to get the model outputs: <i>model((input1, input2))</i>. It's up to you to determine which variables below to substitute for input1 and input2. Remember also from the diagram that the output has two elements: [log probabilities, target tokens]. You won't need the target tokens so we assigned it to _ below for you. </li>
-#     <li> The log probabilities output will have the shape: (batch size, decoder length, vocab size). It will contain log probabilities for each token in the <i>cur_output_tokens</i> plus 1 for the start symbol introduced by the ShiftRight in the preattention decoder. For example, if cur_output_tokens is [1, 2, 5], the model will output an array of log probabilities each for tokens 0 (start symbol), 1, 2, and 5. To generate the next symbol, you just want to get the log probabilities associated with the last token (i.e. token 5 at index 3). You can slice the model output at [0, 3, :] to get this. It will be up to you to generalize this for any length of cur_output_tokens </li>
-# </ul>
-# 
+ The key things to take away here are: 1. it gets random samples with the same shape as your input (i.e. =log_probs=), and 2. the amount of "noise" added to the input by these random samples is scaled by a =temperature= setting. You'll notice that setting it to =0= will just make the return statement equal to getting the argmax of =log_probs=. This will come in handy later. 
 
-# In[ ]:
+Hints:
+ - To get the next power of two, you can compute /2^log_2(token_length + 1)/ . We add 1 to avoid /log(0)./
+ - You can use /np.ceil()/ to get the ceiling of a float.
+ - /np.log2()/ will get the logarithm base 2 of a value
+ - /int()/ will cast a value into an integer type
+ - From the model diagram in part 2, you know that it takes two inputs. You can feed these with this syntax to get the model outputs: /model((input1, input2))/. It's up to you to determine which variables below to substitute for input1 and input2. Remember also from the diagram that the output has two elements: [log probabilities, target tokens]. You won't need the target tokens so we assigned it to _ below for you. 
+ - The log probabilities output will have the shape: (batch size, decoder length, vocab size). It will contain log probabilities for each token in the /cur_output_tokens/ plus 1 for the start symbol introduced by the ShiftRight in the preattention decoder. For example, if cur_output_tokens is [1, 2, 5], the model will output an array of log probabilities each for tokens 0 (start symbol), 1, 2, and 5. To generate the next symbol, you just want to get the log probabilities associated with the last token (i.e. token 5 at index 3). You can slice the model output at [0, 3, :] to get this. It will be up to you to generalize this for any length of cur_output_tokens 
 
-
-# UNQ_C6
-# GRADED FUNCTION
-def next_symbol(NMTAttn, input_tokens, cur_output_tokens, temperature):
+#+begin_src python :results none
+def next_symbol(NMTAttn: layers.Serial, input_tokens: numpy.ndarray, 
+                cur_output_tokens: list,
+                temperature: float) -> (int, float):
     """Returns the index of the next token.
 
     Args:
-        NMTAttn (tl.Serial): An LSTM sequence-to-sequence model with attention.
-        input_tokens (np.ndarray 1 x n_tokens): tokenized representation of the input sentence
-        cur_output_tokens (list): tokenized representation of previously translated words
-        temperature (float): parameter for sampling ranging from 0.0 to 1.0.
+        NMTAttn: An LSTM sequence-to-sequence model with attention.
+        input_tokens (1 x n_tokens): tokenized representation of the input sentence
+        cur_output_tokens: tokenized representation of previously translated words
+        temperature: parameter for sampling ranging from 0.0 to 1.0.
             0.0: same as argmax, always pick the most probable token
             1.0: sampling from the distribution (can sometimes say random things)
 
@@ -104,13 +91,13 @@ def next_symbol(NMTAttn, input_tokens, cur_output_tokens, temperature):
     ### START CODE HERE (REPLACE INSTANCES OF `None` WITH YOUR CODE) ###
 
     # set the length of the current output tokens
-    token_length = None
+    token_length = len(cur_output_tokens)
 
     # calculate next power of 2 for padding length 
-    padded_length = None
+    padded_length = numpy.ceil(2**numpy.log2(token_length + 1))
 
     # pad cur_output_tokens up to the padded_length
-    padded = cur_output_tokens + None
+    padded = cur_output_tokens + (padded_length - token_length) * [0]
     
     # model expects the output to have an axis for the batch size in front so
     # convert `padded` list to a numpy array with shape (x, <padded_length>) where the
@@ -130,14 +117,57 @@ def next_symbol(NMTAttn, input_tokens, cur_output_tokens, temperature):
     ### END CODE HERE ###
 
     return symbol, float(log_probs[symbol])
+#+end_src
 
+#+begin_src python :results none
+def test_next_symbol(next_symbol, model):
+    target = next_symbol
+    the_model = model
+    success = 0
+    fails = 0
+        
+    tokens_en = numpy.array([[17332, 140, 172, 207, 1]])
+     
+    # Test the type and size of output
+    try:
+        next_de_tokens = target(the_model, tokens_en, [], 0.0) 
+        assert(isinstance(next_de_tokens, tuple))
+        assert(len(next_de_tokens) == 2)
+        assert(type(next_de_tokens[0]) == int and type(next_de_tokens[1]) == float)
+        success += 1
+    except:
+        fails += 1
+        print("Output must be a tuple of size 2 containing a integer and a float number")
+    
+    # Test an output
+    try:
+        next_de_tokens = target(the_model, tokens_en, [18477], 0.0)
+        assert(numpy.allclose([next_de_tokens[0], next_de_tokens[1]], [140, -0.000217437744]))
+        success += 1
+    except:
+        fails += 1
+        print("Expected output: ", [140, -0.000217437744])
+    
+        
+    if fails == 0:
+        print("\033[92m All tests passed")
+    else:
+        print('\033[92m', success," Tests passed")
+        print('\033[91m', fails, " Tests failed")
+#+end_src
 
-# In[ ]:
+#+begin_src python :results output :exports both
+test_next_symbol(next_symbol, model)
+#+end_src
 
+#+RESULTS:
+: Output must be a tuple of size 2 containing a integer and a float number
+: Expected output:  [140, -0.000217437744]
+: [92m 0  Tests passed
+: [91m 2  Tests failed
 
-# BEGIN UNIT TEST
-w1_unittest.test_next_symbol(next_symbol, model)
-# END UNIT TEST
+* Raw
+#+begin_example python
 
 
 # Now you will implement the `sampling_decode()` function. This will call the `next_symbol()` function above several times until the next output is the end-of-sentence token (i.e. `EOS`). It takes in an input string and returns the translated version of that string.

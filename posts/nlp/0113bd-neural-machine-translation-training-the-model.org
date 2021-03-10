@@ -11,7 +11,7 @@
 #+END_COMMENT
 #+OPTIONS: ^:{}
 #+TOC: headlines 3
-#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-446b107b-86d0-426f-8adb-e61a7c33ef63-ssh.json
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-78523b64-fdf0-4457-a2d6-9aeada1f6ca2-ssh.json
 #+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
@@ -207,9 +207,9 @@ with TIMER, \
 #+end_src
 
 #+RESULTS:
-: Started: 2021-03-09 18:31:58.844878
-: Ended: 2021-03-09 20:14:43.090358
-: Elapsed: 1:42:44.245480
+: Started: 2021-03-09 20:50:49.746576
+: Ended: 2021-03-09 22:34:21.090773
+: Elapsed: 1:43:31.344197
 
 #+begin_src python :results none
 frame = pandas.DataFrame(
@@ -244,9 +244,9 @@ frame = pandas.DataFrame(
     training_loop.history.get("eval", "metrics/Accuracy"),
     columns="Batch Accuracy".split())
 
-minimum = frame.loc[frame.Accuracy.idxmin()]
-vline = holoviews.VLine(minimum.Batch).opts(opts.VLine(color=PLOT.red))
-hline = holoviews.HLine(minimum.Accuracy).opts(opts.HLine(color=PLOT.red))
+maximum = frame.loc[frame.Accuracy.idxmax()]
+vline = holoviews.VLine(maximum.Batch).opts(opts.VLine(color=PLOT.red))
+hline = holoviews.HLine(maximum.Accuracy).opts(opts.HLine(color=PLOT.red))
 line = frame.hvplot(x="Batch", y="Accuracy").opts(opts.Curve(color=PLOT.blue))
 
 plot = (line * hline * vline).opts(
