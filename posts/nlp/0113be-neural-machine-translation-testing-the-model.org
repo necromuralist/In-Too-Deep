@@ -11,7 +11,7 @@
 #+END_COMMENT
 #+OPTIONS: ^:{}
 #+TOC: headlines 3
-#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-78523b64-fdf0-4457-a2d6-9aeada1f6ca2-ssh.json
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-46cfe342-569a-464d-865a-139ffb0c5165-ssh.json
 #+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
@@ -97,16 +97,16 @@ def next_symbol(NMTAttn: layers.Serial, input_tokens: numpy.ndarray,
     padded_length = numpy.ceil(2**numpy.log2(token_length + 1))
 
     # pad cur_output_tokens up to the padded_length
-    padded = cur_output_tokens + (padded_length - token_length) * [0]
+    padded = (padded_length - token_length) * [0] + cur_output_tokens
     
     # model expects the output to have an axis for the batch size in front so
     # convert `padded` list to a numpy array with shape (x, <padded_length>) where the
     # x position is the batch axis. (hint: you can use np.expand_dims() with axis=0 to insert a new axis)
-    padded_with_batch = None
+    padded_with_batch = numpy.expand_dims(numpy.array(padded), axis=0)
 
     # get the model prediction. remember to use the `NMTAttn` argument defined above.
     # hint: the model accepts a tuple as input (e.g. `my_model((input1, input2))`)
-    output, _ = None
+    output, _ = NMTAttn(())
     
     # get log probabilities from the last token output
     log_probs = output[None]
@@ -168,8 +168,6 @@ test_next_symbol(next_symbol, model)
 
 * Raw
 #+begin_example python
-
-
 # Now you will implement the `sampling_decode()` function. This will call the `next_symbol()` function above several times until the next output is the end-of-sentence token (i.e. `EOS`). It takes in an input string and returns the translated version of that string.
 # 
 # <a name="ex07"></a>
