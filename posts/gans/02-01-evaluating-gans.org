@@ -2,13 +2,477 @@
 .. title: Evaluating GANs
 .. slug: evaluating-gans
 .. date: 2021-05-16 14:09:17 UTC-07:00
-.. tags: 
-.. category: 
+.. tags: gans
+.. category: GANs
 .. link: 
-.. description: 
+.. description: Evaluating GAN quality.
 .. type: text
-
+.. has_math: True
 #+END_COMMENT
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-3fefe175-e38a-41ee-9553-2a607475a0ab-ssh.json
+#+BEGIN_SRC python :results none :exports none
+%load_ext autoreload
+%autoreload 2
+%config InlineBackend.figure_format 'retina'
+#+END_SRC
+* Beginning
+  This is a look at evaluating GANs, particularly with the [[https://www.wikiwand.com/en/Fr%C3%A9chet_inception_distance][Frechet Inception Distance]].
+
+** The Challeges of Evaluating GANs
+
+*** Loss is Uninformative of Performance
+One aspect that makes evaluating GANs challenging is that the loss tells us little about their performance. Unlike with classifiers, where a low loss on a test set indicates superior performance, a low loss for the generator or discriminator suggests that learning has stopped. 
+
+*** No Clear Non-human Metric
+If you define the goal of a GAN as "generating images which look real to people" then it's technically possible to measure this directly: [[https://arxiv.org/abs/1904.01121][you can ask people to act as a discriminator]]. However, this takes significant time and money so ideally you'd want to use a proxy for this. There is also no "perfect" discriminator that can differentiate reals from fakes - if there were, a lot of machine learning tasks would be solved.
+
+ In this notebook, we will implement Fréchet Inception Distance, one method which aims to solve these issues. We'll also be using the [[http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html][CelebA]] dataset.
+** Imports
+#+begin_src python :results none
+# python
+from argparse import Namespace
+from pathlib import Path
+
+# from conda
+from torch import nn
+from torch.distributions import MultivariateNormal
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from torchvision.datasets import CelebA
+from torchvision.models import inception_v3
+from torchvision.utils import make_grid
+
+import matplotlib.pyplot as pyplot
+import numpy
+import pandas
+import scipy
+import seaborn
+import torch
+#+end_src
+** Some Set Up
+*** The Slug
+#+begin_src python :results none
+SLUG = "evaluating-gans"
+OUTPUT = Path("files/posts/gans/{SLUG}")
+#+end_src
+*** The Random Seed
+#+begin_src python :results none
+torch.manual_seed(0) # Set for our testing purposes, please do not change!
+#+end_src
+*** The Generator
+#+begin_src python :results none
+class Generator(nn.Module):
+    """An Image Generator
+
+    Args:
+        z_dim: the dimension of the noise vector
+        im_chan: the number of channels in the images, fitted for the dataset used
+              (CelebA is rgb, so 3 is your default)
+        hidden_dim: the inner dimension
+    """
+    def __init__(self, z_dim: int=10, im_chan: int=3, hidden_dim: int=64):
+        super().__init__()
+        self.z_dim = z_dim
+
+        self.gen = nn.Sequential(
+            self.make_gen_block(z_dim, hidden_dim * 8),
+            self.make_gen_block(hidden_dim * 8, hidden_dim * 4),
+            self.make_gen_block(hidden_dim * 4, hidden_dim * 2),
+            self.make_gen_block(hidden_dim * 2, hidden_dim),
+            self.make_gen_block(hidden_dim, im_chan, kernel_size=4, final_layer=True),
+        )
+
+    def make_gen_block(self, input_channels: int, output_channels: int,
+                       kernel_size: int=3, stride: int=2,
+                       final_layer: bool=False) -> nn.Sequential:
+        """Make a sequence of operations matching DCGAN blocks
+        
+         - a transposed convolution
+         - a batchnorm (except in the final layer)
+         - an activation.
+
+        Args:
+            input_channels: how many channels the input feature representation has
+            output_channels: how many channels the output feature representation should have
+            kernel_size: the size of each convolutional filter, equivalent to (kernel_size, kernel_size)
+            stride: the stride of the convolution
+            final_layer: true if it is the final layer and false otherwise 
+                      (affects activation and batchnorm)
+        """
+        if not final_layer:
+            return nn.Sequential(
+                nn.ConvTranspose2d(input_channels, output_channels,
+                                   kernel_size, stride),
+                nn.BatchNorm2d(output_channels),
+                nn.ReLU(inplace=True),
+            )
+        else:
+            return nn.Sequential(
+                nn.ConvTranspose2d(input_channels, output_channels,
+                                   kernel_size, stride),
+                nn.Tanh(),
+            )
+
+    def forward(self, noise: torch.Tensor) -> torch.Tensor:
+        """forward pass of the generator
+
+        Args:
+            noise: a noise tensor with dimensions (n_samples, z_dim)
+
+        Returns:
+         generated images.
+        """
+        x = noise.view(len(noise), self.z_dim, 1, 1)
+        return self.gen(x)
+#+end_src
+*** A Noise Alias
+#+begin_src python :results none
+get_noise = torch.randn
+#+end_src
+*** Some Constants
+#+begin_src python :results none
+Constants = Namespace(
+    z_dim=64,
+    image_size=299,
+    device="cuda",
+)
+#+end_src
+*** The Data
+#+begin_src python :results none
+data_path = Path("~/pytorch-data/").expanduser()
+assert data_path.is_dir()
+
+transform = transforms.Compose([
+    transforms.Resize(Constants.image_size),
+    transforms.CenterCrop(Constants.image_size),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+])
+
+dataset = CelebA(data_path, download=False, transform=transform)
+#+end_src
+*** A Pretrained Classifier
+#+begin_src python :results none
+base_path = Path("~/models/gans/celeba/").expanduser()
+assert base_path.is_dir()
+
+Prebuilt = Namespace(
+    celeba = Namespace(state_dictionary=base_path/"pretrained_celeba.pth",
+                       key="gen"),
+    classifier = base_path/"pretrained_classifier.pth",
+)
+
+assert prebuilt_models.celeba.is_file()
+assert prebuilt_models.classifier.is_file()
+#+end_src
+
+#+begin_src python :results none
+gen = Generator(Constants.z_dim).to(Contstants.device)
+gen.load_state_dict(torch.load(
+    Prebuilt.celeba.model_dictionary,
+    map_location=torch.device(Constants.device))[Prebuilt.celeba.key])
+gen = gen.eval()
+#+end_src
+*** The Inception Model
+
+ Inception-V3 is a neural network trained on [[http://www.image-net.org/][ImageNet]] to classify objects. You may recall from the lectures that ImageNet has over 1 million images to train on. As a result, Inception-V3 does a good job detecting features and classifying images.
+
+ In the past, people would use a pretrained Inception network to identify the classes of the objects generated by a GAN and measure how similar the distribution of classes generated was to the true image (using [[https://www.wikiwand.com/en/Kullback%E2%80%93Leibler_divergence][Kullbach-Liebler (KL) divergence]]). This is known as an inception score. 
+
+ However, there are many problems with this metric. Barratt and Sharma's 2018 "[[https://arxiv.org/pdf/1801.01973.pdf][A Note on the Inception Score]]" highlights many issues with this approach. Among them, they highlight its instability, its exploitability, and the widespread use of the Inception Score on models not trained on ImageNet.
+
+#+begin_src python :results none
+# inception_model = inception_v3(pretrained=False)
+# inception_model.load_state_dict(torch.load("inception_v3_google-1a9a5a14.pth"))
+
+inception_model = torch.hub.load('pytorch/vision:v0.9.0', 'inception_v3', pretrained=True)
+inception_model.to(device)
+inception_model = inception_model.eval() # Evaluation mode
+#+end_src
+
+* Middle
+** Fréchet Inception Distance
+
+ Fréchet Inception Distance (FID) was proposed as an improvement over Inception Score and still uses the Inception-v3 network as part of its calculation. However, instead of using the classification labels of the Inception-v3 network, it uses the output from an earlier layer—the layer right before the labels. This is often called the feature layer. Research has shown that deep convolutional neural networks trained on difficult tasks, like classifying many classes, build increasingly sophisticated representations of features going deeper into the network. For example, the first few layers may learn to detect different kinds of edges and curves, while the later layers may have neurons that fire in response to human faces.
 
 
-Write your post here.
+*** Reset The Inception Model
+ To get the feature layer of a convolutional neural network, you can replace the final fully connected layer with an identity layer that simply returns whatever input it received, unchanged. This essentially removes the final classification layer and leaves you with the intermediate outputs from the layer before.
+
+ 
+ 1.    You may find [[https://pytorch.org/docs/master/generated/torch.nn.Identity.html][torch.nn.Identity()]] helpful.
+
+ You want to replace the final fully-connected (fc) layer 
+ with an identity function layer to cut off the classification
+ layer and get a feature extractor
+
+#+begin_src python :results none
+#### START CODE HERE ####
+inception_model.fc = None
+#### END CODE HERE ####
+#+end_src
+
+**** Test It
+
+#+begin_src python :results none
+test_identity_noise = torch.randn(100, 100)
+assert torch.equal(test_identity_noise, inception_model.fc(test_identity_noise))
+#+end_src
+*** Fréchet Distance 
+ Fréchet distance uses the values from the feature layer for two sets of images, say reals and fakes, and compares different statistical properties between them to see how different they are. Specifically, Fréchet distance finds the shortest distance needed to walk along two lines, or two curves, simultaneously. The most intuitive explanation of Fréchet distance is as the "minimum leash distance" between two points. Imagine yourself and your dog, both moving along two curves. If you walked on one curve and your dog, attached to a leash, walked on the other at the same pace, what is the least amount of leash that you can give your dog so that you never need to give them more slack during your walk? Using this, the Fréchet distance measures the similarity between these two curves.
+
+ The basic idea is similar for calculating the Fréchet distance between two probability distributions. You'll start by seeing what this looks like in one-dimensional, also called univariate, space.
+
+
+**** Univariate Fréchet Distance
+ You can calculate the distance between two normal distributions \(X\) and \(Y\) with means \(\mu_X\) and \(\mu_Y\) and standard deviations \(\sigma_X\) and \(\sigma_Y\), as:
+
+\[
+d(X,Y) = (\mu_X-\mu_Y)^2 + (\sigma_X-\sigma_Y)^2
+\]
+
+ Pretty simple, right? Now you can see how it can be converted to be used in multi-dimensional, which is also called multivariate, space.
+** Multivariate Fréchet Distance
+**Covariance**
+
+ To find the Fréchet distance between two multivariate normal distributions, you first need to find the covariance instead of the standard deviation. The covariance, which is the multivariate version of variance (the square of standard deviation), is represented using a square matrix where the side length is equal to the number of dimensions. Since the feature vectors you will be using have 2048 values/weights, the covariance matrix will be 2048 x 2048. But for the sake of an example, this is a covariance matrix in a two-dimensional space:
+
+\[
+ \Sigma = \left(\begin{array}{cc} 
+ 1 & 0\\ 
+ 0 & 1
+ \end{array}\right)
+\]
+
+The value at location /(i, j)/ corresponds to the covariance of vector /i/ with vector /j/. Since the covariance of /i/ with /j/ and /j/ with /i/ are equivalent, the matrix will always be symmetric with respect to the diagonal. The diagonal is the covariance of that element with itself. In this example, there are zeros everywhere except the diagonal. That means that the two dimensions are independent of one another, they are completely unrelated.
+*** Visualizing the Matrix
+#+begin_src python :results none
+mean = torch.Tensor([0, 0]) # Center the mean at the origin
+covariance = torch.Tensor( # This matrix shows independence - there are only non-zero values on the diagonal
+    [[1, 0],
+     [0, 1]]
+)
+independent_dist = MultivariateNormal(mean, covariance)
+samples = independent_dist.sample((10000,))
+result = seaborn.jointplot(samples[:, 0], samples[:, 1], kind="kde")
+pyplot.savefig(OUTPUT/"covariance_matrix.png")
+#+end_src
+
+[[file:covariance_matrix.png]]
+
+Now, here's an example of a multivariate normal distribution that has covariance:
+ 
+\[
+\Sigma = \left(\begin{array}{cc} 
+2 & -1\\ 
+-1 & 2
+\end{array}\right)
+\]
+
+ And see how it looks:
+
+#+begin_src python :results none
+mean = torch.Tensor([0, 0])
+covariance = torch.Tensor(
+    [[2, -1],
+     [-1, 2]]
+)
+covariant_dist = MultivariateNormal(mean, covariance)
+samples = covariant_dist.sample((10000,))
+result = seaborn.jointplot(samples[:, 0], samples[:, 1], kind="kde")
+pyplot.savefig(OUTPUT/"multivariate_covariance.png")
+#+end_src
+
+[[file:multivariate_covariance.png]]
+
+*** Formula
+
+ Based on the paper, "[[https://core.ac.uk/reader/82269844][The Fréchet distance between multivariate normal distributions]]" by Dowson and Landau (1982), the Fréchet distance between two multivariate normal distributions /X/ and /Y/ is:
+
+\[
+d(X, Y) = \Vert\mu_X-\mu_Y\Vert^2 + \mathrm{Tr}\left(\Sigma_X+\Sigma_Y - 2 \sqrt{\Sigma_X \Sigma_Y}\right)
+\]
+
+ Similar to the formula for univariate Fréchet distance, you can calculate the distance between the means and the distance between the standard deviations. However, calculating the distance between the standard deviations changes slightly here, as it includes the matrix product and matrix square root. \(\mathrm{Tr}\) refers to the trace, the sum of the diagonal elements of a matrix.
+*** Implementation
+ 1.   You want to implement the above equation in code.
+ 2.   You might find the functions ~torch.norm~ and ~torch.trace~ helpful here.
+ 3.   A matrix_sqrt function is defined for you above -- you need to use it instead of ~torch.sqrt()~ which only gets the elementwise square root instead of the matrix square root.
+ 4.   You can also use the ~@~ symbol for matrix multiplication.
+#+begin_src python :results none
+def matrix_sqrt(x: torch.Tensor) -> torch.Tensor:
+    """Takes the square root of that matrix
+
+    Args:
+        x: a matrix
+
+    Returns:
+     square-root of x
+    """
+    y = x.cpu().detach().numpy()
+    y = scipy.linalg.sqrtm(y)
+    return torch.Tensor(y.real, device=x.device)
+#+end_src
+
+#+begin_src python :results none
+def frechet_distance(mu_x: float, mu_y: float, 
+                     sigma_x: float, sigma_y: float) -> float:
+    """Calculates the Fréchet distance between multivariate Gaussians
+
+    parameterized by their means and covariance matrices.
+
+    Args:
+        mu_x: the mean of the first Gaussian, (n_features)
+        mu_y: the mean of the second Gaussian, (n_features) 
+        sigma_x: the covariance matrix of the first Gaussian, (n_features, n_features)
+        sigma_y: the covariance matrix of the second Gaussian, (n_features, n_features)
+
+    Returns:
+     Frechet Distance between x and y
+    """
+    #### START CODE HERE ####
+    return None
+    #### END CODE HERE ####
+#+end_src
+
+**** Test It
+#+begin_src python :results none
+mean1 = torch.Tensor([0, 0]) # Center the mean at the origin
+covariance1 = torch.Tensor( # This matrix shows independence - there are only non-zero values on the diagonal
+    [[1, 0],
+     [0, 1]]
+)
+dist1 = MultivariateNormal(mean1, covariance1)
+
+mean2 = torch.Tensor([0, 0]) # Center the mean at the origin
+covariance2 = torch.Tensor( # This matrix shows dependence 
+    [[2, -1],
+     [-1, 2]]
+)
+dist2 = MultivariateNormal(mean2, covariance2)
+
+assert torch.isclose(
+    frechet_distance(
+        dist1.mean, dist2.mean,
+        dist1.covariance_matrix, dist2.covariance_matrix
+    ),
+    4 - 2 * torch.sqrt(torch.tensor(3.))
+)
+
+assert (frechet_distance(
+        dist1.mean, dist1.mean,
+        dist1.covariance_matrix, dist1.covariance_matrix
+    ).item() == 0)
+#+end_src
+*** Putting It All Together
+#+begin_src python :results none
+def preprocess(img):
+    img = torch.nn.functional.interpolate(img, size=(299, 299), mode='bilinear', align_corners=False)
+    return img
+#+end_src
+
+Then, you'll define a function to calculate the covariance of the features that returns a covariance matrix given a list of values:
+
+#+begin_src python :results none
+def get_covariance(features):
+    return torch.Tensor(np.cov(features.detach().numpy(), rowvar=False))
+#+end_src
+
+Finally, you can use the pre-trained Inception-v3 model to compute features of the real and fake images. With these features, you can then get the covariance and means of these features across many samples. 
+
+ First, you get the features of the real and fake images using the Inception-v3 model:
+#+begin_src python :results output :exports both
+fake_features_list = []
+real_features_list = []
+
+gen.eval()
+n_samples = 512 # The total number of samples
+batch_size = 4 # Samples per iteration
+
+dataloader = DataLoader(
+    dataset,
+    batch_size=batch_size,
+    shuffle=True)
+
+cur_samples = 0
+with torch.no_grad(): # You don't need to calculate gradients here, so you do this to save memory
+    try:
+        for real_example, _ in tqdm(dataloader, total=n_samples // batch_size): # Go by batch
+            real_samples = real_example
+            real_features = inception_model(real_samples.to(device)).detach().to('cpu') # Move features to CPU
+            real_features_list.append(real_features)
+
+            fake_samples = get_noise(len(real_example), z_dim).to(device)
+            fake_samples = preprocess(gen(fake_samples))
+            fake_features = inception_model(fake_samples.to(device)).detach().to('cpu')
+            fake_features_list.append(fake_features)
+            cur_samples += len(real_samples)
+            if cur_samples >= n_samples:
+                break
+    except Exception as error:
+        print("Error in loop")
+        print(error)
+#+end_src
+ Then, you can combine all of the values that you collected for the reals and fakes into large tensors:
+
+#+begin_src python :results none
+fake_features_all = torch.cat(fake_features_list)
+real_features_all = torch.cat(real_features_list)
+#+end_src
+
+And calculate the covariance and means of these real and fake features:
+
+ Calculate the covariance matrix for the fake and real features
+ and also calculate the means of the feature over the batch (for each feature dimension mean)
+
+#+begin_src python :results none
+#### START CODE HERE ####
+mu_fake = None
+mu_real = None
+sigma_fake = get_covariance(None)
+sigma_real = get_covariance(None)
+#### END CODE HERE ####
+
+assert tuple(sigma_fake.shape) == (fake_features_all.shape[1], fake_features_all.shape[1])
+assert torch.abs(sigma_fake[0, 0] - 2.5e-2) < 1e-2 and torch.abs(sigma_fake[-1, -1] - 5e-2) < 1e-2
+assert tuple(sigma_real.shape) == (real_features_all.shape[1], real_features_all.shape[1])
+assert torch.abs(sigma_real[0, 0] - 3.5768e-2) < 1e-4 and torch.abs(sigma_real[0, 1] + 5.3236e-4) < 1e-4
+assert tuple(mu_fake.shape) == (fake_features_all.shape[1],)
+assert tuple(mu_real.shape) == (real_features_all.shape[1],)
+assert torch.abs(mu_real[0] - 0.3099) < 0.01 and torch.abs(mu_real[1] - 0.2721) < 0.01
+assert torch.abs(mu_fake[0] - 0.37) < 0.05 and torch.abs(mu_real[1] - 0.27) < 0.05
+#+end_src
+
+At this point, you can also visualize what the pairwise multivariate distributions of the inception features look like!
+
+#+begin_src python :results none
+indices = [2, 4, 5]
+fake_dist = MultivariateNormal(mu_fake[indices], sigma_fake[indices][:, indices])
+fake_samples = fake_dist.sample((5000,))
+real_dist = MultivariateNormal(mu_real[indices], sigma_real[indices][:, indices])
+real_samples = real_dist.sample((5000,))
+#+end_src
+
+#+begin_src python :results none
+df_fake = pandas.DataFrame(fake_samples.numpy(), columns=indices)
+df_real = pandas.DataFrame(real_samples.numpy(), columns=indices)
+df_fake["is_real"] = "no"
+df_real["is_real"] = "yes"
+df = pandas.concat([df_fake, df_real])
+result = sns.pairplot(df, plot_kws={'alpha': 0.1}, hue='is_real')
+pyplot.savefig("pairwise.png")
+#+end_src
+
+[[file:pairwise.png]]
+
+Lastly, you can use your earlier ~frechet_distance~ function to calculate the FID and evaluate your GAN. You can see how similar/different the features of the generated images are to the features of the real images. The next cell might take five minutes or so to run in Coursera.
+
+#+begin_src python :results output :exports both
+with torch.no_grad():
+    print(frechet_distance(mu_real, mu_fake, sigma_real, sigma_fake).item())
+#+end_src
+
+You'll notice this model gets a pretty high FID, likely over 30. Since lower is better, and the best models on CelebA get scores in the single-digits, there's clearly a long way to go with this model. You can use FID to compare different models, as well as different stages of training of the same model. 
+#+end_example
+
+* End
