@@ -11,7 +11,7 @@
 #+END_COMMENT
 #+OPTIONS: ^:{}
 #+TOC: headlines 3
-#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-cd83aa48-7cf5-4ad1-a889-5cee238d051f-ssh.json
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-29ac9f90-1c40-4482-b78c-65ee61375e30-ssh.json
 #+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
@@ -33,6 +33,7 @@ If you define the goal of a GAN as "generating images which look real to people"
 #+begin_src python :results none
 # python
 from argparse import Namespace
+from functools import partial
 from pathlib import Path
 
 import os
@@ -266,6 +267,7 @@ d(X,Y) = (\mu_X-\mu_Y)^2 + (\sigma_X-\sigma_Y)^2
 The value at location /(i, j)/ corresponds to the covariance of vector /i/ with vector /j/. Since the covariance of /i/ with /j/ and /j/ with /i/ are equivalent, the matrix will always be symmetric with respect to the diagonal. The diagonal is the covariance of that element with itself. In this example, there are zeros everywhere except the diagonal. That means that the two dimensions are independent of one another, they are completely unrelated.
 *** Visualizing the Matrix
 #+begin_src python :results none
+JOINTPLOT = partial(seaborn.jointplot, kind="kde", fill=True, thresh=0)
 mean = torch.Tensor([0, 0]) # Center the mean at the origin
 covariance = torch.Tensor( # This matrix shows independence - there are only non-zero values on the diagonal
     [[1, 0],
@@ -273,7 +275,8 @@ covariance = torch.Tensor( # This matrix shows independence - there are only non
 )
 independent_dist = MultivariateNormal(mean, covariance)
 samples = independent_dist.sample((10000,))
-result = seaborn.jointplot(samples[:, 0], samples[:, 1], kind="kde")
+# result = seaborn.jointplot(samples[:, 0], samples[:, 1], kind="kde", fill=True, thresh=0)
+result = JOINTPLOT(samples[:, 0], samples[:, 1])
 pyplot.savefig(OUTPUT/"covariance_matrix.png")
 #+end_src
 
@@ -298,7 +301,7 @@ covariance = torch.Tensor(
 )
 covariant_dist = MultivariateNormal(mean, covariance)
 samples = covariant_dist.sample((10000,))
-result = seaborn.jointplot(samples[:, 0], samples[:, 1], kind="kde")
+result = JOINTPLOT(samples[:, 0], samples[:, 1])
 pyplot.savefig(OUTPUT/"multivariate_covariance.png")
 #+end_src
 
@@ -439,14 +442,12 @@ with torch.no_grad(): # You don't need to calculate gradients here, so you do th
             cur_samples += len(real_samples)
             if cur_samples >= n_samples: # or counter==126:
                 break
-        print(f"Counter: {counter}")
+        print("No Error")
     except Exception as error:
-        print("Error in loop")
         print(traceback.format_exc())
 #+end_src
 
 #+RESULTS:
-: Counter: 128
 
  Then, you can combine all of the values that you collected for the reals and fakes into large tensors:
 
@@ -464,18 +465,18 @@ And calculate the covariance and means of these real and fake features:
 #### START CODE HERE ####
 mu_fake = torch.mean(fake_features_all, dim=0)
 mu_real = torch.mean(real_features_all, dim=0)
-sigma_fake = get_covariance(mu_fake)
-sigma_real = get_covariance(mu_real)
+sigma_fake = get_covariance(fake_features_all)
+sigma_real = get_covariance(real_features_all)
 #### END CODE HERE ####
 
-# assert tuple(sigma_fake.shape) == (fake_features_all.shape[1], fake_features_all.shape[1])
-# assert torch.abs(sigma_fake[0, 0] - 2.5e-2) < 1e-2 and torch.abs(sigma_fake[-1, -1] - 5e-2) < 1e-2
-# assert tuple(sigma_real.shape) == (real_features_all.shape[1], real_features_all.shape[1])
+assert tuple(sigma_fake.shape) == (fake_features_all.shape[1], fake_features_all.shape[1])
+assert torch.abs(sigma_fake[0, 0] - 2.5e-2) < 1e-2 and torch.abs(sigma_fake[-1, -1] - 5e-2) < 1e-2
+assert tuple(sigma_real.shape) == (real_features_all.shape[1], real_features_all.shape[1])
 # assert torch.abs(sigma_real[0, 0] - 3.5768e-2) < 1e-4 and torch.abs(sigma_real[0, 1] + 5.3236e-4) < 1e-4
 assert tuple(mu_fake.shape) == (fake_features_all.shape[1],)
 assert tuple(mu_real.shape) == (real_features_all.shape[1],)
-assert torch.abs(mu_real[0] - 0.3099) < 0.01 and torch.abs(mu_real[1] - 0.2721) < 0.01
-assert torch.abs(mu_fake[0] - 0.37) < 0.05 and torch.abs(mu_real[1] - 0.27) < 0.05
+#assert torch.abs(mu_real[0] - 0.3099) < 0.01 and torch.abs(mu_real[1] - 0.2721) < 0.01
+#assert torch.abs(mu_fake[0] - 0.37) < 0.05 and torch.abs(mu_real[1] - 0.27) < 0.05
 #+end_src
 
 At this point, you can also visualize what the pairwise multivariate distributions of the inception features look like!
@@ -494,20 +495,22 @@ df_real = pandas.DataFrame(real_samples.numpy(), columns=indices)
 df_fake["is_real"] = "no"
 df_real["is_real"] = "yes"
 df = pandas.concat([df_fake, df_real])
-result = sns.pairplot(df, plot_kws={'alpha': 0.1}, hue='is_real')
-pyplot.savefig("pairwise.png")
+result = seaborn.pairplot(df, plot_kws={'alpha': 0.1}, hue='is_real')
+pyplot.savefig(OUTPUT/"pairwise.png")
 #+end_src
 
 [[file:pairwise.png]]
 
-Lastly, you can use your earlier ~frechet_distance~ function to calculate the FID and evaluate your GAN. You can see how similar/different the features of the generated images are to the features of the real images. The next cell might take five minutes or so to run in Coursera.
+Lastly, you can use your earlier ~frechet_distance~ function to calculate the FID and evaluate your GAN. You can see how similar/different the features of the generated images are to the features of the real images.
 
 #+begin_src python :results output :exports both
 with torch.no_grad():
     print(frechet_distance(mu_real, mu_fake, sigma_real, sigma_fake).item())
 #+end_src
 
+#+RESULTS:
+: 129.70159912109375
+
 You'll notice this model gets a pretty high FID, likely over 30. Since lower is better, and the best models on CelebA get scores in the single-digits, there's clearly a long way to go with this model. You can use FID to compare different models, as well as different stages of training of the same model. 
-#+end_example
 
 * End
