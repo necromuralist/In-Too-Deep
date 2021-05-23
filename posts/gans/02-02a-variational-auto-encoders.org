@@ -1,0 +1,11 @@
+#+BEGIN_COMMENT
+.. title: Variational Auto Encoders
+.. slug: variational-auto-encoders
+.. date: 2021-05-22 18:36:50 UTC-07:00
+.. tags: variational auto encoders,generative
+.. category: Variational Auto Encoders
+.. link: 
+.. description: A look at generation with Variational Auto Encoders.
+.. type: text
+
+#+END_COMMENT
