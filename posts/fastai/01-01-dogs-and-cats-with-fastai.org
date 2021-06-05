@@ -1,0 +1,120 @@
+#+BEGIN_COMMENT
+.. title: Dogs and Cats With Fastai
+.. slug: dogs-and-cats-with-fastai
+.. date: 2021-05-30 19:49:01 UTC-07:00
+.. tags: fastai,cnn
+.. category: fastai
+.. link: 
+.. description: Chapter One - dogs vs cats.
+.. type: text
+
+#+END_COMMENT
+#+OPTIONS: ^:{}
+#+TOC: headlines 3
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-20aa9485-f510-4256-b44d-2769e41078ad-ssh.json
+#+BEGIN_SRC python :results none :exports none
+%load_ext autoreload
+%autoreload 2
+#+END_SRC
+* Beginning
+#+begin_src python :results none
+# python
+from pathlib import Path
+
+# conda
+from fastai.vision.all import (
+    cnn_learner,
+    get_image_files,
+    image_cat,
+    ImageDataLoaders,
+    PILImage,
+    resnet34,
+    error_rate,
+    Resize,
+    URLs,
+    untar_data)
+#+end_src
+* Training the Model
+** The Data
+#+begin_src python :results none
+destination = Path("~/data/fastai/").expanduser()
+
+path = untar_data(URLs.PETS, dest=destination)/'images'
+files = get_image_files(path)
+#+end_src
+
+*** Is-Cat
+    The elements in the ~files~ are python ~Path~ objects so we can user their attributes to inspect the file names.
+
+#+begin_src python :results output :exports both
+print(files[0].name)
+print(files[1].name)
+#+end_src
+
+#+RESULTS:
+: leonberger_4.jpg
+: Russian_Blue_133.jpg
+
+   There are two types of images in the dataset - cats and dogs. The files with cat images have names with the first letter capitalized while the files with dogs have lower cased names (in the output just above the "leonberger" is a dog and the "Russian Blue" is a cat) so we can classify them by checking their file-names.
+
+#+begin_src python :results none
+def is_cat(x: str) -> bool:
+    """Checks if the file-name indicates that it is a cat
+
+    Args:
+     x: file-name to check
+    
+    Returns:
+     True if it is a cat
+    """
+    return x[0].isupper()
+#+end_src
+
+
+This next bit runs out of memory and crashes by default. There's a bug-report [[https://github.com/ElderResearch/gpu_docker/issues/38][here]] with what to do. The problem appears to be a combination of docker and pytorch. Either set ~num_workers=0~ (which possibly slows it down) or run docker with ~--ipy="host"~.
+
+#+begin_src python :results none
+dataloaders = ImageDataLoaders.from_name_func(
+    path, files, valid_pct=0.2, seed=42, num_workers=0,
+    label_func=is_cat, item_tfms=Resize(224))
+#+end_src
+** The Model
+#+begin_src python :results output :exports both
+learn = cnn_learner(dataloaders, resnet34, metrics=error_rate)
+learn.fine_tune(1)
+#+end_src
+** Test An Image
+#+begin_src python :results none
+img = PILImage.create(image_cat())
+#+end_src
+* Raw
+#+begin_example python
+# ### Sidebar: This Book Was Written in Jupyter Notebooks
+img.to_thumb(192)
+
+
+# ### End sidebar
+
+# In[ ]:
+
+
+uploader = widgets.FileUpload()
+uploader
+
+
+# In[ ]:
+
+
+#hide
+# For the book, we can't actually click an upload button, so we fake it
+uploader = SimpleNamespace(data = ['images/chapter1_cat_example.jpg'])
+
+
+# In[ ]:
+
+
+img = PILImage.create(uploader.data[0])
+is_cat,_,probs = learn.predict(img)
+print(f"Is this a cat?: {is_cat}.")
+print(f"Probability it's a cat: {probs[1].item():.6f}")
+#+end_example
