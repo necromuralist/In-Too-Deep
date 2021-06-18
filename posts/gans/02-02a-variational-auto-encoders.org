@@ -7,18 +7,18 @@
 .. link: 
 .. description: A look at generation with Variational Auto Encoders.
 .. type: text
-
+.. has-math: True
 #+END_COMMENT
 #+OPTIONS: ^:{}
 #+TOC: headlines 3
-#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-193f97fd-cdd7-456a-86d6-1597061029ee-ssh.json
+#+PROPERTY: header-args :session ~/.local/share/jupyter/runtime/kernel-68150605-9972-41c8-ad45-321cb879d939-ssh.json
 #+BEGIN_SRC python :results none :exports none
 %load_ext autoreload
 %autoreload 2
 %config InlineBackend.figure_format 'retina'
 #+END_SRC
 * Beginning
- The "AE" in VAE stands for autoencoder. As an autoencoder, the VAE has two parts: an encoder and a decoder. Instead of mapping each image to a single point in $z$-space, the encoder outputs the means and covariance matrices of a multivariate normal distribution where all of the dimensions are independent. You should have had a chance to read more about multivariate normal distributions in last week's assignment, but you can think of the output of the encoder of a VAE this way: the means and standard deviations of a set of independent normal distributions, with one normal distribution (one mean and standard deviation) for each latent dimension. 
+ The "AE" in VAE stands for autoencoder. As an autoencoder, the VAE has two parts: an encoder and a decoder. Instead of mapping each image to a single point in /z/-space, the encoder outputs the means and covariance matrices of a multivariate normal distribution where all of the dimensions are independent. You should have had a chance to read more about multivariate normal distributions in last week's assignment, but you can think of the output of the encoder of a VAE this way: the means and standard deviations of a set of independent normal distributions, with one normal distribution (one mean and standard deviation) for each latent dimension. 
 
  *VAE Architecture Drawing: The encoding outputs a distribution in /z/-space, and to generate an image you sample from the distributon and pass the /z/-space sample to the decoder, which returns an image. VAE latent space visualization from [[https://arxiv.org/abs/1804.00891][Hyperspherical Variational Auto-Encoders]]*, by Davidson et al. in UAI 2018.
 
